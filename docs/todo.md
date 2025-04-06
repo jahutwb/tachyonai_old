@@ -44,10 +44,10 @@ Poniższa lista to **inkrementalny plan** rozwoju projektu tachyonai (repo: [htt
 - [x] **3.2. Skrypt wczytujący obrazy negatywne**  
   - Z `/data/neg/...`, filtrowanie metadanych (presence of Person)
   - `type=NEGATIVE` w bazie
-- [ ] **3.3. Generowanie embeddingów (CLIP)**  
+- [~] **3.3. Generowanie embeddingów (CLIP)**  
   - Tworzenie `embedding` w formacie JSON
   - Można użyć offline lub w locie
-- [ ] **3.4. Indeks FAISS** (opcjonalnie na tym etapie)  
+- [~] **3.4. Indeks FAISS** (opcjonalnie na tym etapie)  
   - Utworzyć indeks, w którym będą embeddingi wszystkich `images`
 
 ---
@@ -99,7 +99,7 @@ Poniższa lista to **inkrementalny plan** rozwoju projektu tachyonai (repo: [htt
 - [x] **6.2. Testy Integracyjne**  
   - Endpointy `/api/sessions`, `/api/rounds`, `/api/users` (rejestracja, logowanie)
   - Sprawdzić poprawne tworzenie nowej sesji, rund, finalne statystyki
-- [ ] **6.3. Testy FAISS**  
+- [x] **6.3. Testy FAISS**  
   - Upewnić się, że nearest neighbor faktycznie znajduje poprawnych kandydatów
   - Przykładowe embeddingi + test na duplikaty
 

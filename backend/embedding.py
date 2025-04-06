@@ -11,6 +11,7 @@ import faiss
 import time
 from torchvision import transforms
 from io import BytesIO
+from tqdm import tqdm
 
 from .database import SessionLocal, engine
 from .models import Image as ImageModel, ImageTypeEnum
@@ -30,6 +31,10 @@ faiss_index_pos = None
 faiss_index_neg = None
 image_ids_pos = []
 image_ids_neg = []
+
+# Maksymalna liczba obrazów każdego typu
+MAX_POSITIVE_IMAGES = 2000
+MAX_NEGATIVE_IMAGES = 2000
 
 
 def load_clip_model() -> None:
@@ -84,58 +89,102 @@ def generate_embedding(image_path: str) -> Optional[List[float]]:
         return None
 
 
-def update_embeddings(db: Session, limit: int = 0) -> int:
+def update_embeddings(db: Session, limit_pos: int = MAX_POSITIVE_IMAGES, limit_neg: int = MAX_NEGATIVE_IMAGES) -> Dict[str, int]:
     """
     Aktualizuje embeddingi dla obrazów w bazie danych, które ich nie mają.
+    Ogranicza liczbę obrazów do podanych limitów dla każdego typu.
     
     Args:
         db: Sesja bazy danych
-        limit: Maksymalna liczba obrazów do zaktualizowania (0 = wszystkie)
+        limit_pos: Maksymalna liczba obrazów pozytywnych do zaktualizowania
+        limit_neg: Maksymalna liczba obrazów negatywnych do zaktualizowania
     
     Returns:
-        Liczba zaktualizowanych obrazów
+        Słownik zawierający liczbę zaktualizowanych obrazów każdego typu
     """
     # Ładowanie modelu CLIP
     load_clip_model()
     if clip_model is None:
         logger.error("Nie można zaktualizować embeddingów - model CLIP nie jest dostępny.")
-        return 0
+        return {"positive": 0, "negative": 0}
     
-    # Pobierz obrazy bez embeddingów
-    query = db.query(ImageModel).filter(ImageModel.embedding.is_(None))
-    if limit > 0:
-        query = query.limit(limit)
+    # Liczniki zaktualizowanych obrazów
+    updated_pos = 0
+    updated_neg = 0
     
-    images = query.all()
-    logger.info(f"Znaleziono {len(images)} obrazów bez embeddingów.")
+    # Aktualizacja obrazów pozytywnych
+    logger.info(f"Wyszukiwanie obrazów pozytywnych bez embeddingów (limit: {limit_pos})...")
+    pos_images = db.query(ImageModel).filter(
+        ImageModel.type == ImageTypeEnum.POSITIVE,
+        ImageModel.embedding.is_(None)
+    ).limit(limit_pos).all()
+    logger.info(f"Znaleziono {len(pos_images)} obrazów pozytywnych bez embeddingów.")
     
-    updated_count = 0
-    for image in images:
-        # Sprawdź, czy plik istnieje
-        if not os.path.exists(image.path):
-            logger.warning(f"Plik {image.path} nie istnieje, pomijam.")
-            continue
+    if pos_images:
+        logger.info("Rozpoczynam generowanie embeddingów dla obrazów pozytywnych...")
+        for image in tqdm(pos_images, desc="Obrazy pozytywne"):
+            # Sprawdź, czy plik istnieje
+            if not os.path.exists(image.path):
+                logger.warning(f"Plik {image.path} nie istnieje, pomijam.")
+                continue
+            
+            # Generuj embedding
+            embedding = generate_embedding(image.path)
+            if embedding is None:
+                logger.warning(f"Nie udało się wygenerować embeddingu dla {image.path}, pomijam.")
+                continue
+            
+            # Aktualizuj obiekt w bazie
+            image.embedding = embedding
+            updated_pos += 1
+            
+            # Co 10 obrazów commituj zmiany
+            if updated_pos % 10 == 0:
+                db.commit()
         
-        # Generuj embedding
-        embedding = generate_embedding(image.path)
-        if embedding is None:
-            logger.warning(f"Nie udało się wygenerować embeddingu dla {image.path}, pomijam.")
-            continue
-        
-        # Aktualizuj obiekt w bazie
-        image.embedding = embedding
-        updated_count += 1
-        
-        # Co 10 obrazów commituj zmiany i wyświetl postęp
-        if updated_count % 10 == 0:
-            db.commit()
-            logger.info(f"Zaktualizowano {updated_count}/{len(images)} embeddingów.")
+        # Końcowy commit dla obrazów pozytywnych
+        db.commit()
+        logger.info(f"Zakończono generowanie embeddingów dla {updated_pos} obrazów pozytywnych.")
     
-    # Końcowy commit
-    db.commit()
-    logger.info(f"Zakończono aktualizację embeddingów. Zaktualizowano {updated_count} obrazów.")
+    # Aktualizacja obrazów negatywnych
+    logger.info(f"Wyszukiwanie obrazów negatywnych bez embeddingów (limit: {limit_neg})...")
+    neg_images = db.query(ImageModel).filter(
+        ImageModel.type == ImageTypeEnum.NEGATIVE,
+        ImageModel.embedding.is_(None)
+    ).limit(limit_neg).all()
+    logger.info(f"Znaleziono {len(neg_images)} obrazów negatywnych bez embeddingów.")
     
-    return updated_count
+    if neg_images:
+        logger.info("Rozpoczynam generowanie embeddingów dla obrazów negatywnych...")
+        for image in tqdm(neg_images, desc="Obrazy negatywne"):
+            # Sprawdź, czy plik istnieje
+            if not os.path.exists(image.path):
+                logger.warning(f"Plik {image.path} nie istnieje, pomijam.")
+                continue
+            
+            # Generuj embedding
+            embedding = generate_embedding(image.path)
+            if embedding is None:
+                logger.warning(f"Nie udało się wygenerować embeddingu dla {image.path}, pomijam.")
+                continue
+            
+            # Aktualizuj obiekt w bazie
+            image.embedding = embedding
+            updated_neg += 1
+            
+            # Co 10 obrazów commituj zmiany
+            if updated_neg % 10 == 0:
+                db.commit()
+        
+        # Końcowy commit dla obrazów negatywnych
+        db.commit()
+        logger.info(f"Zakończono generowanie embeddingów dla {updated_neg} obrazów negatywnych.")
+    
+    total_updated = updated_pos + updated_neg
+    logger.info(f"Zakończono aktualizację embeddingów. Zaktualizowano {total_updated} obrazów "
+                f"({updated_pos} pozytywnych, {updated_neg} negatywnych).")
+    
+    return {"positive": updated_pos, "negative": updated_neg}
 
 
 def build_faiss_index(db: Session) -> Tuple[int, int]:
@@ -306,8 +355,8 @@ def main():
     db = SessionLocal()
     try:
         # Aktualizacja embeddingów
-        updated_count = update_embeddings(db, limit=100)
-        logger.info(f"Zaktualizowano {updated_count} embeddingów.")
+        updated_count = update_embeddings(db, limit_pos=MAX_POSITIVE_IMAGES, limit_neg=MAX_NEGATIVE_IMAGES)
+        logger.info(f"Zaktualizowano {updated_count['positive']} obrazów pozytywnych i {updated_count['negative']} obrazów negatywnych.")
         
         # Budowa indeksu FAISS
         pos_count, neg_count = build_faiss_index(db)
