@@ -39,7 +39,8 @@ class UserBase(BaseModel):
     username: str
 
 
-class UserCreate(UserBase):
+class UserCreate(BaseModel):
+    username: str
     password: str
 
 
@@ -47,13 +48,22 @@ class UserLogin(UserBase):
     password: str
 
 
-class UserResponse(UserBase):
+class UserResponse(BaseModel):
     id: int
-    role: UserRoleEnum
+    username: str
     created_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class UserProfile(UserResponse):
+    session_count: int
+    completed_session_count: int
+    round_count: int
+    success_count: int
+    failure_count: int
+    total_profit_factor: float
 
 
 class ImageBase(BaseModel):
@@ -132,10 +142,17 @@ class RoundBase(BaseModel):
     user_choice_side: SideEnum
 
 
-class RoundCreate(RoundBase):
-    user_action: ActionEnum
+class RoundCreate(BaseModel):
+    id: int
+    session_id: int
+    round_number: int
+    pos_image_id: int
+    neg_image_id: int
     start_price: float
-    response_time: Optional[float] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
 
 
 class RoundUpdate(BaseModel):
@@ -166,4 +183,84 @@ class Token(BaseModel):
 
 
 class TokenData(BaseModel):
-    username: Optional[str] = None 
+    username: Optional[str] = None
+
+
+class NearestImage(BaseModel):
+    id: int
+    distance: float
+
+
+class ImageEmbedding(BaseModel):
+    id: int
+    embedding: List[float]
+
+
+class Image(BaseModel):
+    id: int
+    path: str
+    type: ImageTypeEnum
+    total_successes: int
+    total_failures: int
+    total_profit_factor: float
+    parent_id: Optional[int] = None
+
+    class Config:
+        from_attributes = True
+
+
+class Session(BaseModel):
+    id: int
+    user_id: int
+    status: str
+    created_at: datetime
+    session_profit_factor: float
+    remaining_pairs: int
+    pos_pool_json: Optional[List[Any]] = Field(default_factory=list)
+    neg_pool_json: Optional[List[Any]] = Field(default_factory=list)
+
+    class Config:
+        from_attributes = True
+
+
+class SessionSummary(BaseModel):
+    id: int
+    status: str
+    started_at: datetime
+    session_profit_factor: float
+    remaining_pairs: int
+    success_count: int
+    failure_count: int
+    round_count: int
+    positive_stimuli: Optional[List[Any]] = None
+    negative_stimuli: Optional[List[Any]] = None
+
+    class Config:
+        from_attributes = True
+
+
+class RoundChoice(BaseModel):
+    session_id: int
+    round_id: int
+    side: str  # LEFT lub RIGHT
+
+
+class RoundResult(BaseModel):
+    round_id: int
+    session_id: int
+    start_price: float
+    end_price: float
+    profit_fraction: float
+    result: str
+    remaining_pairs: int
+    session_profit_factor: float
+    stimulus_url: Optional[str] = None
+
+
+class GenealogyNode(BaseModel):
+    id: int
+    successes: int
+    failures: int
+    profit_factor: float
+    parent: Optional[int] = None
+    origin: str  # "random", "child", "bought" 

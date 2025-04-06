@@ -1,39 +1,41 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, Enum, DateTime, JSON
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, Enum, DateTime, JSON, Text
+from sqlalchemy.ext.mutable import MutableList
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-import enum
+from enum import Enum as PyEnum
 from datetime import datetime
+from typing import List as TypeList, Optional
 
 from .database import Base
 
 
-class UserRoleEnum(enum.Enum):
+class UserRoleEnum(PyEnum):
     USER = "USER"
     ADMIN = "ADMIN"
 
 
-class SessionStatusEnum(enum.Enum):
+class SessionStatusEnum(PyEnum):
     ACTIVE = "ACTIVE"
     COMPLETED = "COMPLETED"
     ABANDONED = "ABANDONED"
 
 
-class RoundResultEnum(enum.Enum):
+class RoundResultEnum(PyEnum):
     SUCCESS = "SUCCESS"
     FAILURE = "FAILURE"
 
 
-class SideEnum(enum.Enum):
+class SideEnum(PyEnum):
     LEFT = "LEFT"
     RIGHT = "RIGHT"
 
 
-class ActionEnum(enum.Enum):
+class ActionEnum(PyEnum):
     BUY = "BUY"
     SELL = "SELL"
 
 
-class ImageTypeEnum(enum.Enum):
+class ImageTypeEnum(str, PyEnum):
     POSITIVE = "POSITIVE"
     NEGATIVE = "NEGATIVE"
 
@@ -55,16 +57,18 @@ class Image(Base):
     __tablename__ = "images"
 
     id = Column(Integer, primary_key=True, index=True)
-    path = Column(String, unique=True)
-    type = Column(Enum(ImageTypeEnum))
-    embedding = Column(JSON, nullable=True)
+    path = Column(String, unique=True, index=True)
+    type = Column(Enum(ImageTypeEnum), index=True)
+    embedding = Column(MutableList.as_mutable(JSON), nullable=True)
     img_metadata = Column(JSON, nullable=True)
     total_successes = Column(Integer, default=0)
     total_failures = Column(Integer, default=0)
     total_profit_factor = Column(Float, default=1.0)
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    parent_id = Column(Integer, ForeignKey("images.id"), nullable=True)
 
+    parent = relationship("Image", remote_side=[id], backref="children")
     pos_rounds = relationship("Round", foreign_keys="Round.pos_image_id", back_populates="pos_image")
     neg_rounds = relationship("Round", foreign_keys="Round.neg_image_id", back_populates="neg_image")
 
@@ -74,9 +78,9 @@ class Session(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
-    status = Column(Enum(SessionStatusEnum), default=SessionStatusEnum.ACTIVE)
-    pos_pool_json = Column(JSON)
-    neg_pool_json = Column(JSON)
+    status = Column(String, index=True)
+    pos_pool_json = Column(JSON, nullable=True)
+    neg_pool_json = Column(JSON, nullable=True)
     session_profit_factor = Column(Float, default=1.0)
     remaining_pairs = Column(Integer, default=6)
     started_at = Column(DateTime, default=func.now())
@@ -94,12 +98,12 @@ class Round(Base):
     round_number = Column(Integer)
     pos_image_id = Column(Integer, ForeignKey("images.id"))
     neg_image_id = Column(Integer, ForeignKey("images.id"))
-    user_choice_side = Column(Enum(SideEnum))
-    user_action = Column(Enum(ActionEnum))
+    user_choice_side = Column(String, nullable=True)
+    user_action = Column(String, nullable=True)
     start_price = Column(Float)
     end_price = Column(Float, nullable=True)
     profit_fraction = Column(Float, nullable=True)
-    result = Column(Enum(RoundResultEnum), nullable=True)
+    result = Column(String, nullable=True)
     response_time = Column(Float, nullable=True)
     created_at = Column(DateTime, default=func.now())
     completed_at = Column(DateTime, nullable=True)

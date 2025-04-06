@@ -12,6 +12,7 @@ import logging
 from .database import get_db, engine
 from . import models, schemas, auth
 from .init_db import init_db
+from .routers import sessions_router, rounds_router, images_router, user_router
 
 # Inicjalizacja loggera
 logging.basicConfig(
@@ -40,11 +41,35 @@ frontend_dir = Path(__file__).parent.parent / "frontend"
 templates = Jinja2Templates(directory=str(frontend_dir / "templates"))
 app.mount("/static", StaticFiles(directory=str(frontend_dir / "static")), name="static")
 
+# Rejestracja routerów API
+app.include_router(sessions_router, prefix="/api", tags=["sessions"])
+app.include_router(rounds_router, prefix="/api", tags=["rounds"])
+app.include_router(images_router, prefix="/api", tags=["images"])
+app.include_router(user_router, prefix="/api", tags=["users"])
+
 
 @app.get("/")
 async def read_root(request: Request):
     """Strona główna."""
     return templates.TemplateResponse("index.html", {"request": request})
+
+
+@app.get("/game")
+async def game_page(request: Request):
+    """Strona z grą."""
+    return templates.TemplateResponse("game.html", {"request": request})
+
+
+@app.get("/summary")
+async def summary_page(request: Request):
+    """Strona z podsumowaniem sesji."""
+    return templates.TemplateResponse("summary.html", {"request": request})
+
+
+@app.get("/stats")
+async def stats_page(request: Request):
+    """Strona ze statystykami globalnymi."""
+    return templates.TemplateResponse("stats.html", {"request": request})
 
 
 @app.post("/token", response_model=schemas.Token)
@@ -87,12 +112,6 @@ async def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
 async def read_users_me(current_user: models.User = Depends(auth.get_current_user)):
     """Endpoint zwracający dane aktualnie zalogowanego użytkownika."""
     return current_user
-
-
-# Tutaj dodajemy kolejne routery z endpointami
-# Np. app.include_router(users_router)
-# Np. app.include_router(sessions_router)
-# Np. app.include_router(rounds_router)
 
 
 @app.get("/health")
