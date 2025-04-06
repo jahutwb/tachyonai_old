@@ -1,0 +1,315 @@
+/* Globalne resetowanie */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+/* Główne zmienne */
+:root {
+    --bg-color: #1A1A1A;
+    --bg-color-light: #333333;
+    --accent-color: #7D40FE;
+    --accent-color-light: #AA80FF;
+    --text-color: #FFFFFF;
+    --text-color-secondary: #CCCCCC;
+    --font-family: 'Open Sans', 'Roboto', sans-serif;
+    --spacing-sm: 8px;
+    --spacing-md: 16px;
+    --spacing-lg: 24px;
+    --border-radius: 8px;
+}
+
+/* Podstawowe style */
+body {
+    font-family: var(--font-family);
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    font-size: 18px;
+    line-height: 1.6;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    font-weight: 600;
+    margin-bottom: var(--spacing-md);
+}
+
+h1 {
+    font-size: 32px;
+}
+
+h2 {
+    font-size: 24px;
+}
+
+a {
+    color: var(--accent-color);
+    text-decoration: none;
+    transition: color 0.3s ease;
+}
+
+a:hover {
+    color: var(--accent-color-light);
+}
+
+/* Navbar */
+.navbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: var(--bg-color);
+    padding: var(--spacing-md) var(--spacing-lg);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.navbar-logo a {
+    font-size: 24px;
+    font-weight: bold;
+    color: var(--accent-color);
+}
+
+.navbar-menu {
+    display: flex;
+    align-items: center;
+}
+
+.navbar-item {
+    margin-right: var(--spacing-lg);
+    color: var(--text-color);
+}
+
+.navbar-auth {
+    display: flex;
+    align-items: center;
+}
+
+#username-display {
+    margin-right: var(--spacing-md);
+    color: var(--accent-color-light);
+}
+
+/* Przyciski */
+.button {
+    background-color: transparent;
+    border: 1px solid var(--accent-color);
+    color: var(--accent-color);
+    padding: 8px 16px;
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    font-size: 16px;
+    transition: all 0.3s ease;
+    margin-left: var(--spacing-sm);
+}
+
+.button:hover {
+    background-color: rgba(125, 64, 254, 0.1);
+}
+
+.primary-button {
+    background-color: var(--accent-color);
+    color: var(--text-color);
+}
+
+.primary-button:hover {
+    background-color: var(--accent-color-light);
+}
+
+/* Główna zawartość */
+.main-content {
+    min-height: calc(100vh - 60px - 15vh); /* Uwzględnia navbar i footer */
+    padding: var(--spacing-lg);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.welcome-container {
+    text-align: center;
+    max-width: 800px;
+}
+
+.welcome-container p {
+    margin-bottom: var(--spacing-lg);
+}
+
+/* Modals */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+}
+
+.modal-content {
+    background-color: var(--bg-color-light);
+    margin: 10% auto;
+    padding: var(--spacing-lg);
+    border-radius: var(--border-radius);
+    width: 80%;
+    max-width: 500px;
+    position: relative;
+}
+
+.close {
+    position: absolute;
+    right: var(--spacing-lg);
+    top: var(--spacing-md);
+    color: var(--text-color-secondary);
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.close:hover {
+    color: var(--text-color);
+}
+
+/* Formularze */
+.form-group {
+    margin-bottom: var(--spacing-md);
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: var(--spacing-sm);
+    color: var(--text-color);
+}
+
+.form-group input {
+    width: 100%;
+    padding: 10px;
+    background-color: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: var(--border-radius);
+    color: var(--text-color);
+    font-size: 16px;
+}
+
+.form-group input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+}
+
+/* Loading overlay */
+.overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.8);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 2000;
+}
+
+.spinner {
+    width: 50px;
+    height: 50px;
+    border: 5px solid rgba(255, 255, 255, 0.2);
+    border-top: 5px solid var(--accent-color);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: var(--spacing-md);
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Game screen (kurtyny) */
+.game-container {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    height: 70vh;
+}
+
+.curtain {
+    flex: 1;
+    height: 100%;
+    background-color: var(--bg-color-light);
+    margin: 0 var(--spacing-md);
+    border-radius: var(--border-radius);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    transition: width 0.5s ease;
+    overflow: hidden;
+    position: relative;
+}
+
+.curtain:hover {
+    background-color: #444444;
+}
+
+.curtain-expanded {
+    width: 100%;
+}
+
+.curtain-hidden {
+    width: 0;
+    margin: 0;
+}
+
+/* Pasek statystyk (footer) */
+.stats-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background-color: rgba(26, 26, 26, 0.8);
+    padding: var(--spacing-md);
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.stat-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.stat-value {
+    font-size: 20px;
+    font-weight: bold;
+    color: var(--accent-color);
+}
+
+.stat-label {
+    font-size: 14px;
+    color: var(--text-color-secondary);
+}
+
+/* Responsywność */
+@media (max-width: 768px) {
+    .navbar-menu {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .navbar-item {
+        margin-right: 0;
+        margin-bottom: var(--spacing-sm);
+    }
+    
+    .game-container {
+        flex-direction: column;
+        height: auto;
+    }
+    
+    .curtain {
+        height: 30vh;
+        margin: var(--spacing-md) 0;
+    }
+} 

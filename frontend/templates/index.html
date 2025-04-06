@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TachyonAI</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-logo">
+            <a href="/">TachyonAI</a>
+        </div>
+        <div class="navbar-menu">
+            <a href="/" class="navbar-item">Strona Startowa</a>
+            <a href="/stats" class="navbar-item">Statystyki Użytkownika</a>
+            <div class="navbar-auth">
+                <span id="username-display"></span>
+                <button id="login-button" class="button">Logowanie</button>
+                <button id="register-button" class="button">Rejestracja</button>
+                <button id="logout-button" class="button" style="display: none;">Wyloguj</button>
+            </div>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <div class="welcome-container">
+            <h1>Witaj w TachyonAI</h1>
+            <p>Aplikacja do ukrytego przewidywania kursu BTC z wykorzystaniem algorytmu quasi-genetycznego.</p>
+            <button id="start-game-button" class="button primary-button">Rozpocznij grę</button>
+        </div>
+    </main>
+
+    <div id="login-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Logowanie</h2>
+            <form id="login-form">
+                <div class="form-group">
+                    <label for="login-username">Nazwa użytkownika</label>
+                    <input type="text" id="login-username" name="username" required>
+                </div>
+                <div class="form-group">
+                    <label for="login-password">Hasło</label>
+                    <input type="password" id="login-password" name="password" required>
+                </div>
+                <button type="submit" class="button primary-button">Zaloguj</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="register-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Rejestracja</h2>
+            <form id="register-form">
+                <div class="form-group">
+                    <label for="register-username">Nazwa użytkownika</label>
+                    <input type="text" id="register-username" name="username" required>
+                </div>
+                <div class="form-group">
+                    <label for="register-password">Hasło</label>
+                    <input type="password" id="register-password" name="password" required>
+                </div>
+                <div class="form-group">
+                    <label for="register-confirm-password">Powtórz hasło</label>
+                    <input type="password" id="register-confirm-password" name="confirm-password" required>
+                </div>
+                <button type="submit" class="button primary-button">Zarejestruj</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="loading-overlay" class="overlay" style="display: none;">
+        <div class="spinner"></div>
+        <p id="loading-message">Ładowanie...</p>
+    </div>
+
+    <script src="{{ url_for('static', path='/js/auth.js') }}"></script>
+    <script src="{{ url_for('static', path='/js/main.js') }}"></script>
+</body>
+</html> 
