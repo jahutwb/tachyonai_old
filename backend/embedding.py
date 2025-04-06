@@ -4,7 +4,7 @@ import torch
 import numpy as np
 from PIL import Image
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Union
 from sqlalchemy.orm import Session
 import json
 import faiss
@@ -18,11 +18,14 @@ from .models import Image as ImageModel, ImageTypeEnum
 from . import models
 
 # Konfiguracja loggera
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
 logger = logging.getLogger(__name__)
+
+# Katalog danych - ustawiony bezpośrednio
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+
+def get_logger(name):
+    """Pomocnicza funkcja do uzyskania loggera."""
+    return logging.getLogger(name)
 
 # Globalne zmienne dla CLIP i indeksu FAISS
 clip_model = None
@@ -187,54 +190,91 @@ def update_embeddings(db: Session, limit_pos: int = MAX_POSITIVE_IMAGES, limit_n
     return {"positive": updated_pos, "negative": updated_neg}
 
 
-def build_faiss_index(db: Session) -> Tuple[int, int]:
+def build_faiss_index(db: Session) -> tuple[int, int]:
     """
-    Buduje indeksy FAISS dla pozytywnych i negatywnych obrazów.
-    
-    Args:
-        db: Sesja bazy danych
-    
-    Returns:
-        Tuple z liczbą obrazów w indeksie pozytywnym i negatywnym
+    Tworzy indeks FAISS dla wszystkich obrazów w bazie danych, które mają embeddingi.
+    Zwraca liczbę obrazów pozytywnych i negatywnych użytych do budowy indeksu.
     """
-    global faiss_index_pos, faiss_index_neg, image_ids_pos, image_ids_neg
+    logger = get_logger("backend.embedding")
     
-    # Pobierz obrazy z embeddingami
-    pos_images = db.query(ImageModel).filter(
-        ImageModel.type == ImageTypeEnum.POSITIVE,
-        ImageModel.embedding.isnot(None)
-    ).all()
+    # Pobierz wszystkie pozytywne obrazy z embeddingami
+    logger.info(f"Budowanie indeksu FAISS dla {count_images_with_embeddings(db, True)} obrazów pozytywnych...")
+    pos_images = get_images_with_embeddings(db, True)
     
-    neg_images = db.query(ImageModel).filter(
-        ImageModel.type == ImageTypeEnum.NEGATIVE,
-        ImageModel.embedding.isnot(None)
-    ).all()
+    # Pobierz wszystkie negatywne obrazy z embeddingami
+    logger.info(f"Budowanie indeksu FAISS dla {count_images_with_embeddings(db, False)} obrazów negatywnych...")
+    neg_images = get_images_with_embeddings(db, False)
     
-    logger.info(f"Budowanie indeksu FAISS dla {len(pos_images)} obrazów pozytywnych...")
+    # Sprawdź, czy są jakiekolwiek embeddingi
+    if len(pos_images) == 0 and len(neg_images) == 0:
+        logger.info("Brak embeddingów do zbudowania indeksu FAISS.")
+        return 0, 0
     
-    # Przygotuj dane dla indeksu pozytywnego
-    pos_embeddings = np.array([img.embedding for img in pos_images], dtype=np.float32)
-    image_ids_pos = [img.id for img in pos_images]
+    # Przygotuj dane do indeksu
+    pos_embeddings = []
+    if pos_images:
+        pos_embeddings = [img.embedding for img in pos_images if img.embedding]
+        
+    neg_embeddings = []
+    if neg_images:
+        neg_embeddings = [img.embedding for img in neg_images if img.embedding]
     
-    if len(pos_embeddings) > 0:
-        dim = pos_embeddings.shape[1]  # Wymiar embeddingów
-        faiss_index_pos = faiss.IndexFlatL2(dim)  # Indeks L2 (Euclidean distance)
-        faiss_index_pos.add(pos_embeddings)
+    # Sprawdź czy po filtrowaniu zostały jakieś embeddingi
+    if not pos_embeddings and not neg_embeddings:
+        logger.info("Brak poprawnych embeddingów do zbudowania indeksu FAISS.")
+        return 0, 0
     
-    logger.info(f"Budowanie indeksu FAISS dla {len(neg_images)} obrazów negatywnych...")
+    # Ustal wymiar embeddingów
+    dim = 512  # Domyślna wartość wymiarowa dla CLIP
+    if pos_embeddings:
+        sample_embedding = pos_embeddings[0]
+        if sample_embedding and len(sample_embedding) > 0:
+            dim = len(sample_embedding)
+    elif neg_embeddings:
+        sample_embedding = neg_embeddings[0]
+        if sample_embedding and len(sample_embedding) > 0:
+            dim = len(sample_embedding)
     
-    # Przygotuj dane dla indeksu negatywnego
-    neg_embeddings = np.array([img.embedding for img in neg_images], dtype=np.float32)
-    image_ids_neg = [img.id for img in neg_images]
+    logger.info(f"Wymiar embeddingów: {dim}")
     
-    if len(neg_embeddings) > 0:
-        dim = neg_embeddings.shape[1]  # Wymiar embeddingów
-        faiss_index_neg = faiss.IndexFlatL2(dim)  # Indeks L2 (Euclidean distance)
-        faiss_index_neg.add(neg_embeddings)
+    # Utwórz indeks FAISS
+    index = faiss.IndexFlatIP(dim)
     
-    logger.info(f"Zakończono budowanie indeksów FAISS: {len(pos_images)} pozytywnych, {len(neg_images)} negatywnych.")
+    # Konwertuj listy embeddingów na tablice numpy
+    if pos_embeddings:
+        pos_embeddings_array = np.array(pos_embeddings, dtype=np.float32)
+        index.add(pos_embeddings_array)
+        logger.info(f"Dodano {len(pos_embeddings)} pozytywnych embeddingów do indeksu")
     
-    return len(pos_images), len(neg_images)
+    if neg_embeddings:
+        neg_embeddings_array = np.array(neg_embeddings, dtype=np.float32)
+        index.add(neg_embeddings_array)
+        logger.info(f"Dodano {len(neg_embeddings)} negatywnych embeddingów do indeksu")
+    
+    # Zapisz indeks
+    index_path = os.path.join(DATA_DIR, "index", "faiss_index.idx")
+    os.makedirs(os.path.dirname(index_path), exist_ok=True)
+    faiss.write_index(index, index_path)
+    
+    logger.info(f"Indeks FAISS zbudowany i zapisany. "
+                f"Zawiera {len(pos_embeddings)} obrazów pozytywnych i {len(neg_embeddings)} obrazów negatywnych.")
+    
+    # Zapisz mapowanie id
+    id_mapping = []
+    for i, img in enumerate(pos_images):
+        if i < len(pos_embeddings):  # Upewnij się, że indeks nie wychodzi poza zakres
+            id_mapping.append((img.id, True))
+    
+    for i, img in enumerate(neg_images):
+        if i < len(neg_embeddings):  # Upewnij się, że indeks nie wychodzi poza zakres
+            id_mapping.append((img.id, False))
+    
+    # Zapisz mapowanie ID
+    with open(os.path.join(DATA_DIR, "index", "id_mapping.json"), "w") as f:
+        json.dump(id_mapping, f)
+    
+    logger.info(f"Mapowanie ID zapisane.")
+    return len(pos_embeddings), len(neg_embeddings)
 
 
 def find_nearest_image(
@@ -349,37 +389,222 @@ def get_image_embeddings(db: Session, image_ids: List[int]) -> Dict[int, List[fl
     return embeddings
 
 
+def count_images_with_embeddings(db: Session, is_positive: bool) -> int:
+    """
+    Zlicza ilość obrazów z embeddingami w bazie danych.
+    
+    Args:
+        db: Sesja bazy danych
+        is_positive: Czy liczyć obrazy pozytywne (True) czy negatywne (False)
+    
+    Returns:
+        Liczba obrazów z embeddingami
+    """
+    image_type = ImageTypeEnum.POSITIVE if is_positive else ImageTypeEnum.NEGATIVE
+    return db.query(ImageModel).filter(
+        ImageModel.type == image_type,
+        ImageModel.embedding.isnot(None)
+    ).count()
+
+
+def get_images_with_embeddings(db: Session, is_positive: bool) -> List[ImageModel]:
+    """
+    Pobiera obrazy z embeddingami z bazy danych.
+    
+    Args:
+        db: Sesja bazy danych
+        is_positive: Czy pobrać obrazy pozytywne (True) czy negatywne (False)
+    
+    Returns:
+        Lista obrazów z embeddingami
+    """
+    image_type = ImageTypeEnum.POSITIVE if is_positive else ImageTypeEnum.NEGATIVE
+    return db.query(ImageModel).filter(
+        ImageModel.type == image_type,
+        ImageModel.embedding.isnot(None)
+    ).all()
+
+
+def force_generate_embeddings(db: Session, limit_pos: int = 20, limit_neg: int = 20) -> Dict[str, int]:
+    """
+    Wymusza generowanie embeddingów dla obrazów, nawet jeśli w bazie danych jest informacja,
+    że obrazy już mają embeddingi. Przydatne, gdy embeddingi są puste lub nieprawidłowe.
+    
+    Args:
+        db: Sesja bazy danych
+        limit_pos: Maksymalna liczba obrazów pozytywnych do przetworzenia
+        limit_neg: Maksymalna liczba obrazów negatywnych do przetworzenia
+        
+    Returns:
+        Słownik zawierający liczbę zaktualizowanych obrazów każdego typu
+    """
+    file_logger = logging.getLogger(__name__)
+    
+    # Ładowanie modelu CLIP
+    load_clip_model()
+    if clip_model is None:
+        file_logger.error("Nie można zaktualizować embeddingów - model CLIP nie jest dostępny.")
+        return {"positive": 0, "negative": 0}
+    
+    # Liczniki zaktualizowanych obrazów
+    updated_pos = 0
+    updated_neg = 0
+    
+    # Aktualizacja obrazów pozytywnych
+    file_logger.info(f"Pobieranie obrazów pozytywnych do wygenerowania embeddingów (limit: {limit_pos})...")
+    pos_images = db.query(ImageModel).filter(
+        ImageModel.type == ImageTypeEnum.POSITIVE
+    ).limit(limit_pos).all()
+    file_logger.info(f"Pobrano {len(pos_images)} obrazów pozytywnych.")
+    
+    if pos_images:
+        file_logger.info("Rozpoczynam generowanie embeddingów dla obrazów pozytywnych...")
+        for image in tqdm(pos_images, desc="Obrazy pozytywne"):
+            # Sprawdź, czy plik istnieje
+            if not os.path.exists(image.path):
+                file_logger.warning(f"Plik {image.path} nie istnieje, pomijam.")
+                continue
+            
+            # Generuj embedding
+            embedding = generate_embedding(image.path)
+            if embedding is None:
+                file_logger.warning(f"Nie udało się wygenerować embeddingu dla {image.path}, pomijam.")
+                continue
+            
+            # Aktualizuj obiekt w bazie
+            image.embedding = embedding
+            updated_pos += 1
+            
+            # Co 5 obrazów commituj zmiany
+            if updated_pos % 5 == 0:
+                db.commit()
+                file_logger.info(f"Zapisano {updated_pos} embeddingów dla obrazów pozytywnych.")
+        
+        # Końcowy commit dla obrazów pozytywnych
+        db.commit()
+        file_logger.info(f"Zakończono generowanie embeddingów dla {updated_pos} obrazów pozytywnych.")
+    
+    # Aktualizacja obrazów negatywnych
+    file_logger.info(f"Pobieranie obrazów negatywnych do wygenerowania embeddingów (limit: {limit_neg})...")
+    neg_images = db.query(ImageModel).filter(
+        ImageModel.type == ImageTypeEnum.NEGATIVE
+    ).limit(limit_neg).all()
+    file_logger.info(f"Pobrano {len(neg_images)} obrazów negatywnych.")
+    
+    if neg_images:
+        file_logger.info("Rozpoczynam generowanie embeddingów dla obrazów negatywnych...")
+        for image in tqdm(neg_images, desc="Obrazy negatywne"):
+            # Sprawdź, czy plik istnieje
+            if not os.path.exists(image.path):
+                file_logger.warning(f"Plik {image.path} nie istnieje, pomijam.")
+                continue
+            
+            # Generuj embedding
+            embedding = generate_embedding(image.path)
+            if embedding is None:
+                file_logger.warning(f"Nie udało się wygenerować embeddingu dla {image.path}, pomijam.")
+                continue
+            
+            # Aktualizuj obiekt w bazie
+            image.embedding = embedding
+            updated_neg += 1
+            
+            # Co 5 obrazów commituj zmiany
+            if updated_neg % 5 == 0:
+                db.commit()
+                file_logger.info(f"Zapisano {updated_neg} embeddingów dla obrazów negatywnych.")
+        
+        # Końcowy commit dla obrazów negatywnych
+        db.commit()
+        file_logger.info(f"Zakończono generowanie embeddingów dla {updated_neg} obrazów negatywnych.")
+    
+    total_updated = updated_pos + updated_neg
+    file_logger.info(f"Zakończono aktualizację embeddingów. Zaktualizowano {total_updated} obrazów "
+                f"({updated_pos} pozytywnych, {updated_neg} negatywnych).")
+    
+    return {"positive": updated_pos, "negative": updated_neg}
+
+
 def main():
     """Główna funkcja do testowania generowania embeddingów."""
+    # Konfiguracja loggera dla tego pliku
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+    file_logger = logging.getLogger(__name__)
+    
+    file_logger.info("Rozpoczynam diagnostykę embeddingów")
+    
     # Utworzenie sesji bazy danych
     db = SessionLocal()
     try:
-        # Aktualizacja embeddingów
-        updated_count = update_embeddings(db, limit_pos=MAX_POSITIVE_IMAGES, limit_neg=MAX_NEGATIVE_IMAGES)
-        logger.info(f"Zaktualizowano {updated_count['positive']} obrazów pozytywnych i {updated_count['negative']} obrazów negatywnych.")
+        # Sprawdź liczbę obrazów w bazie danych
+        pos_count = db.query(ImageModel).filter(
+            ImageModel.type == ImageTypeEnum.POSITIVE
+        ).count()
+        
+        neg_count = db.query(ImageModel).filter(
+            ImageModel.type == ImageTypeEnum.NEGATIVE
+        ).count()
+        
+        file_logger.info(f"Znaleziono {pos_count} obrazów pozytywnych i {neg_count} obrazów negatywnych w bazie danych.")
+        
+        # Sprawdź liczbę obrazów z embeddingami
+        pos_with_embedding = db.query(ImageModel).filter(
+            ImageModel.type == ImageTypeEnum.POSITIVE,
+            ImageModel.embedding.isnot(None)
+        ).count()
+        
+        neg_with_embedding = db.query(ImageModel).filter(
+            ImageModel.type == ImageTypeEnum.NEGATIVE,
+            ImageModel.embedding.isnot(None)
+        ).count()
+        
+        file_logger.info(f"Znaleziono {pos_with_embedding} obrazów pozytywnych i {neg_with_embedding} obrazów negatywnych z embeddingami.")
+        
+        # Pobierz przykładowy obraz pozytywny i sprawdź jego embedding
+        pos_img = db.query(ImageModel).filter(
+            ImageModel.type == ImageTypeEnum.POSITIVE
+        ).first()
+        
+        if pos_img:
+            file_logger.info(f"Przykładowy obraz pozytywny: ID={pos_img.id}, PATH={pos_img.path}")
+            file_logger.info(f"Embedding: {'JEST' if pos_img.embedding is not None else 'BRAK'}")
+            if pos_img.embedding:
+                file_logger.info(f"Typ embeddingu: {type(pos_img.embedding)}")
+                file_logger.info(f"Długość embeddingu: {len(pos_img.embedding) if isinstance(pos_img.embedding, list) else 'N/A'}")
+        
+        # Pobierz przykładowy obraz negatywny i sprawdź jego embedding
+        neg_img = db.query(ImageModel).filter(
+            ImageModel.type == ImageTypeEnum.NEGATIVE
+        ).first()
+        
+        if neg_img:
+            file_logger.info(f"Przykładowy obraz negatywny: ID={neg_img.id}, PATH={neg_img.path}")
+            file_logger.info(f"Embedding: {'JEST' if neg_img.embedding is not None else 'BRAK'}")
+            if neg_img.embedding:
+                file_logger.info(f"Typ embeddingu: {type(neg_img.embedding)}")
+                file_logger.info(f"Długość embeddingu: {len(neg_img.embedding) if isinstance(neg_img.embedding, list) else 'N/A'}")
+        
+        # Użyj opcji wymuszania generowania embeddingów
+        file_logger.info("Rozpoczynam wymuszanie generowania embeddingów...")
+        updated_count = force_generate_embeddings(db, limit_pos=10, limit_neg=10)
+        file_logger.info(f"Zaktualizowano {updated_count['positive']} obrazów pozytywnych i {updated_count['negative']} obrazów negatywnych.")
         
         # Budowa indeksu FAISS
-        pos_count, neg_count = build_faiss_index(db)
-        logger.info(f"Zbudowano indeks FAISS dla {pos_count} obrazów pozytywnych i {neg_count} obrazów negatywnych.")
-        
-        if pos_count > 0 and neg_count > 0:
-            # Test znajdowania najbliższego obrazu
-            test_image = db.query(ImageModel).filter(ImageModel.embedding.isnot(None)).first()
-            if test_image:
-                nearest_id = find_nearest_image(
-                    test_image.embedding,
-                    positive=(test_image.type == ImageTypeEnum.POSITIVE),
-                    exclude_ids=[test_image.id]
-                )
-                if nearest_id:
-                    logger.info(f"Najbliższy obraz do {test_image.id}: {nearest_id}")
-                else:
-                    logger.warning("Nie znaleziono najbliższego obrazu.")
+        if updated_count['positive'] > 0 or updated_count['negative'] > 0:
+            file_logger.info("Rozpoczynam budowę indeksu FAISS po aktualizacji embeddingów...")
+            pos_count, neg_count = build_faiss_index(db)
+            file_logger.info(f"Zbudowano indeks FAISS dla {pos_count} obrazów pozytywnych i {neg_count} obrazów negatywnych.")
+        else:
+            file_logger.info("Pomijam budowę indeksu FAISS - nie zaktualizowano żadnych embeddingów.")
     
     except Exception as e:
-        logger.error(f"Błąd podczas przetwarzania embeddingów: {str(e)}")
+        file_logger.error(f"Błąd podczas przetwarzania embeddingów: {str(e)}", exc_info=True)
     finally:
         db.close()
+        file_logger.info("Zakończono diagnostykę embeddingów")
 
 
 if __name__ == "__main__":

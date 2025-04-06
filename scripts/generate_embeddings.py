@@ -14,7 +14,8 @@ import time
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from backend.database import SessionLocal
-from backend.embedding import update_embeddings, build_faiss_index, MAX_POSITIVE_IMAGES, MAX_NEGATIVE_IMAGES
+from backend.models import Image, ImageTypeEnum
+from backend.embedding import update_embeddings, force_generate_embeddings, build_faiss_index, MAX_POSITIVE_IMAGES, MAX_NEGATIVE_IMAGES
 
 # Konfiguracja loggera
 logging.basicConfig(
@@ -44,6 +45,11 @@ def main():
         action="store_true",
         help="Pomiń tworzenie indeksu FAISS po wygenerowaniu embeddingów"
     )
+    parser.add_argument(
+        "--force", 
+        action="store_true",
+        help="Wymuś generowanie embeddingów, nawet dla obrazów, które już mają embeddingi w bazie"
+    )
     args = parser.parse_args()
     
     logger.info("Rozpoczynanie procesu generowania embeddingów i tworzenia indeksu FAISS...")
@@ -54,18 +60,36 @@ def main():
     # Utworzenie sesji bazy danych
     db = SessionLocal()
     try:
-        # Aktualizacja embeddingów
-        logger.info(f"Rozpoczynam generowanie embeddingów (limit pozytywnych: {args.limit_pos}, limit negatywnych: {args.limit_neg})...")
-        result = update_embeddings(db, limit_pos=args.limit_pos, limit_neg=args.limit_neg)
+        # Pokaż informacje o obecnym stanie bazy danych
+        pos_count = db.query(Image).filter(
+            Image.type == ImageTypeEnum.POSITIVE
+        ).count()
+        
+        neg_count = db.query(Image).filter(
+            Image.type == ImageTypeEnum.NEGATIVE
+        ).count()
+        
+        logger.info(f"W bazie danych znajduje się {pos_count} obrazów pozytywnych i {neg_count} obrazów negatywnych.")
+        
+        # Aktualizacja embeddingów - wybór metody w zależności od flagi --force
+        if args.force:
+            logger.info(f"Wymuszanie generowania embeddingów (limit pozytywnych: {args.limit_pos}, limit negatywnych: {args.limit_neg})...")
+            result = force_generate_embeddings(db, limit_pos=args.limit_pos, limit_neg=args.limit_neg)
+        else:
+            logger.info(f"Rozpoczynam generowanie embeddingów (limit pozytywnych: {args.limit_pos}, limit negatywnych: {args.limit_neg})...")
+            result = update_embeddings(db, limit_pos=args.limit_pos, limit_neg=args.limit_neg)
+            
         logger.info(f"Zaktualizowano {result['positive']} obrazów pozytywnych i {result['negative']} obrazów negatywnych.")
         
-        # Tworzenie indeksu FAISS, jeśli nie zostało pominięte
-        if not args.skip_faiss:
+        # Tworzenie indeksu FAISS, jeśli nie zostało pominięte i coś zostało zaktualizowane
+        if not args.skip_faiss and (result['positive'] > 0 or result['negative'] > 0):
             logger.info("Rozpoczynam tworzenie indeksu FAISS...")
             pos_count, neg_count = build_faiss_index(db)
             logger.info(f"Utworzono indeks FAISS dla {pos_count} obrazów pozytywnych i {neg_count} obrazów negatywnych.")
-        else:
+        elif args.skip_faiss:
             logger.info("Pomijam tworzenie indeksu FAISS zgodnie z parametrem --skip-faiss.")
+        else:
+            logger.info("Pomijam tworzenie indeksu FAISS - nie zaktualizowano żadnych embeddingów.")
         
     finally:
         # Zamknięcie sesji bazy danych
