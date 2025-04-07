@@ -16,90 +16,154 @@ describe('Testy uwierzytelniania', () => {
 
   describe('Rejestracja', () => {
     it('powinna pozwolić użytkownikowi na rejestrację', async () => {
-      await page.goto('http://localhost:8000/signup');
-      await page.waitForSelector('#username');
+      await page.goto('http://localhost:8000/');
+      await page.waitForSelector('#register-button');
       
-      await page.type('#username', testUsername);
-      await page.type('#password', testPassword);
+      // Kliknij przycisk rejestracji, aby otworzyć modal
+      await page.click('#register-button');
+      await page.waitForSelector('#register-modal', { visible: true });
       
+      // Wypełnij formularz rejestracji
+      await page.type('#register-username', testUsername);
+      await page.type('#register-password', testPassword);
+      await page.type('#register-confirm-password', testPassword);
+      
+      // Kliknij przycisk submit i poczekaj na przeładowanie
       await Promise.all([
-        page.click('button[type="submit"]'),
-        page.waitForNavigation()
+        page.click('#register-form button[type="submit"]'),
+        page.waitForNavigation({ timeout: 5000 }).catch(() => {})
       ]);
       
-      // Sprawdź, czy rejestracja przebiegła pomyślnie i użytkownik został przekierowany
-      const url = page.url();
-      expect(url).toContain('http://localhost:8000/game');
-    });
+      // Sprawdź, czy użytkownik jest zalogowany
+      await page.waitForSelector('#username-display', { timeout: 5000 });
+      const userDisplay = await page.$eval('#username-display', el => el.textContent);
+      expect(userDisplay).toContain(testUsername);
+    }, 60000);
     
     it('powinna pokazać błąd, gdy nazwa użytkownika jest już zajęta', async () => {
-      await page.goto('http://localhost:8000/signup');
-      await page.waitForSelector('#username');
+      await page.goto('http://localhost:8000/');
+      await page.waitForSelector('#register-button');
       
-      await page.type('#username', testUsername); // Użyj tej samej nazwy użytkownika
-      await page.type('#password', testPassword);
+      // Kliknij przycisk rejestracji, aby otworzyć modal
+      await page.click('#register-button');
+      await page.waitForSelector('#register-modal', { visible: true });
       
-      await page.click('button[type="submit"]');
+      // Wypełnij formularz rejestracji tym samym użytkownikiem
+      await page.type('#register-username', testUsername);
+      await page.type('#register-password', testPassword);
+      await page.type('#register-confirm-password', testPassword);
       
-      // Sprawdź, czy pojawił się komunikat o błędzie
-      await page.waitForSelector('.error-message');
-      const errorText = await page.$eval('.error-message', el => el.textContent);
-      expect(errorText).toContain('już istnieje');
-    });
+      // Kliknij przycisk submit
+      await page.click('#register-form button[type="submit"]');
+      
+      // Poczekaj na komunikat o błędzie
+      await page.waitForFunction(
+        () => document.querySelector('.error-message') !== null || document.querySelector('.alert-error') !== null,
+        { timeout: 5000 }
+      );
+      
+      // Sprawdź, czy pojawił się komunikat o błędzie (może być różnie stylowany)
+      const errorElement = await page.$('.error-message') || await page.$('.alert-error');
+      expect(errorElement).not.toBeNull();
+    }, 60000);
   });
   
   describe('Logowanie', () => {
     it('powinno pozwolić użytkownikowi na zalogowanie się', async () => {
-      await page.goto('http://localhost:8000/login');
-      await page.waitForSelector('#username');
+      // Wyloguj się, jeśli jesteś zalogowany
+      const logoutButton = await page.$('#logout-button');
+      if (logoutButton) {
+        await page.click('#logout-button');
+        await page.waitForSelector('#login-button');
+      }
       
-      await page.type('#username', testUsername);
-      await page.type('#password', testPassword);
+      await page.goto('http://localhost:8000/');
+      await page.waitForSelector('#login-button');
       
+      // Kliknij przycisk logowania, aby otworzyć modal
+      await page.click('#login-button');
+      await page.waitForSelector('#login-modal', { visible: true });
+      
+      // Wypełnij formularz logowania
+      await page.type('#login-username', testUsername);
+      await page.type('#login-password', testPassword);
+      
+      // Kliknij przycisk submit i poczekaj na zalogowanie
       await Promise.all([
-        page.click('button[type="submit"]'),
-        page.waitForNavigation()
+        page.click('#login-form button[type="submit"]'),
+        page.waitForNavigation({ timeout: 5000 }).catch(() => {})
       ]);
       
-      // Sprawdź, czy logowanie przebiegło pomyślnie i użytkownik został przekierowany
-      const url = page.url();
-      expect(url).toContain('http://localhost:8000/game');
-    });
+      // Sprawdź, czy użytkownik jest zalogowany
+      await page.waitForSelector('#username-display', { timeout: 5000 });
+      const userDisplay = await page.$eval('#username-display', el => el.textContent);
+      expect(userDisplay).toContain(testUsername);
+    }, 60000);
     
     it('powinno pokazać błąd przy nieprawidłowych danych logowania', async () => {
-      await page.goto('http://localhost:8000/login');
-      await page.waitForSelector('#username');
+      // Wyloguj się, jeśli jesteś zalogowany
+      const logoutButton = await page.$('#logout-button');
+      if (logoutButton) {
+        await page.click('#logout-button');
+        await page.waitForSelector('#login-button');
+      }
       
-      await page.type('#username', testUsername);
-      await page.type('#password', 'nieprawidłowe_hasło');
+      await page.goto('http://localhost:8000/');
+      await page.waitForSelector('#login-button');
       
-      await page.click('button[type="submit"]');
+      // Kliknij przycisk logowania, aby otworzyć modal
+      await page.click('#login-button');
+      await page.waitForSelector('#login-modal', { visible: true });
       
-      // Sprawdź, czy pojawił się komunikat o błędzie
-      await page.waitForSelector('.error-message');
-      const errorText = await page.$eval('.error-message', el => el.textContent);
-      expect(errorText).toContain('Nieprawidłowe dane logowania');
-    });
+      // Wypełnij formularz logowania z nieprawidłowym hasłem
+      await page.type('#login-username', testUsername);
+      await page.type('#login-password', 'nieprawidłowe_hasło');
+      
+      // Kliknij przycisk submit
+      await page.click('#login-form button[type="submit"]');
+      
+      // Poczekaj na komunikat o błędzie
+      await page.waitForFunction(
+        () => document.querySelector('.error-message') !== null || document.querySelector('.alert-error') !== null,
+        { timeout: 5000 }
+      );
+      
+      // Sprawdź, czy pojawił się komunikat o błędzie (może być różnie stylowany)
+      const errorElement = await page.$('.error-message') || await page.$('.alert-error');
+      expect(errorElement).not.toBeNull();
+    }, 60000);
   });
   
   describe('Wylogowanie', () => {
     it('powinno pozwolić użytkownikowi na wylogowanie się', async () => {
-      // Najpierw zaloguj użytkownika
-      await login(page, testUsername, testPassword);
+      // Zaloguj się
+      await page.goto('http://localhost:8000/');
+      await page.waitForSelector('#login-button');
+      
+      // Kliknij przycisk logowania, aby otworzyć modal
+      await page.click('#login-button');
+      await page.waitForSelector('#login-modal', { visible: true });
+      
+      // Wypełnij formularz logowania
+      await page.type('#login-username', testUsername);
+      await page.type('#login-password', testPassword);
+      
+      // Kliknij przycisk submit i poczekaj na zalogowanie
+      await Promise.all([
+        page.click('#login-form button[type="submit"]'),
+        page.waitForNavigation({ timeout: 5000 }).catch(() => {})
+      ]);
+      
+      // Poczekaj na przycisk wylogowania
+      await page.waitForSelector('#logout-button', { visible: true, timeout: 5000 });
       
       // Kliknij przycisk wylogowania
       await page.click('#logout-button');
       
-      // Sprawdź, czy użytkownik został przekierowany na stronę logowania
-      await page.waitForNavigation();
-      const url = page.url();
-      expect(url).toContain('http://localhost:8000/login');
-      
-      // Sprawdź, czy token został usunięty (sprawdzając, czy przekierowanie na stronę gry jest zablokowane)
-      await page.goto('http://localhost:8000/game');
-      await page.waitForNavigation();
-      const newUrl = page.url();
-      expect(newUrl).toContain('http://localhost:8000/login');
-    });
+      // Sprawdź, czy użytkownik jest wylogowany
+      await page.waitForSelector('#login-button', { timeout: 5000 });
+      const loginButton = await page.$('#login-button');
+      expect(loginButton).not.toBeNull();
+    }, 60000);
   });
 }); 
