@@ -159,62 +159,78 @@ document.addEventListener('DOMContentLoaded', () => {
     // Obsługa modala logowania
     const loginButton = document.getElementById('login-button');
     const loginModal = document.getElementById('login-modal');
-    const loginForm = document.getElementById('login-form');
-    const loginCloseButton = loginModal.querySelector('.close');
+    
+    if (loginButton && loginModal) {
+        const loginForm = document.getElementById('login-form');
+        const loginCloseButton = loginModal.querySelector('.close');
 
-    loginButton.addEventListener('click', () => {
-        loginModal.style.display = 'block';
-    });
+        loginButton.addEventListener('click', () => {
+            loginModal.style.display = 'block';
+        });
 
-    loginCloseButton.addEventListener('click', () => {
-        loginModal.style.display = 'none';
-    });
+        if (loginCloseButton) {
+            loginCloseButton.addEventListener('click', () => {
+                loginModal.style.display = 'none';
+            });
+        }
 
-    loginForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const username = document.getElementById('login-username').value;
-        const password = document.getElementById('login-password').value;
-        await login(username, password);
-    });
+        if (loginForm) {
+            loginForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const username = document.getElementById('login-username').value;
+                const password = document.getElementById('login-password').value;
+                await login(username, password);
+            });
+        }
+    }
 
     // Obsługa modala rejestracji
     const registerButton = document.getElementById('register-button');
     const registerModal = document.getElementById('register-modal');
-    const registerForm = document.getElementById('register-form');
-    const registerCloseButton = registerModal.querySelector('.close');
+    
+    if (registerButton && registerModal) {
+        const registerForm = document.getElementById('register-form');
+        const registerCloseButton = registerModal.querySelector('.close');
 
-    registerButton.addEventListener('click', () => {
-        registerModal.style.display = 'block';
-    });
+        registerButton.addEventListener('click', () => {
+            registerModal.style.display = 'block';
+        });
 
-    registerCloseButton.addEventListener('click', () => {
-        registerModal.style.display = 'none';
-    });
-
-    registerForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const username = document.getElementById('register-username').value;
-        const password = document.getElementById('register-password').value;
-        const confirmPassword = document.getElementById('register-confirm-password').value;
-
-        if (password !== confirmPassword) {
-            showError('register-form', 'Hasła nie są zgodne!');
-            return;
+        if (registerCloseButton) {
+            registerCloseButton.addEventListener('click', () => {
+                registerModal.style.display = 'none';
+            });
         }
 
-        await register(username, password);
-    });
+        if (registerForm) {
+            registerForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const username = document.getElementById('register-username').value;
+                const password = document.getElementById('register-password').value;
+                const confirmPassword = document.getElementById('register-confirm-password').value;
+
+                if (password !== confirmPassword) {
+                    showError('register-form', 'Hasła nie są zgodne!');
+                    return;
+                }
+
+                await register(username, password);
+            });
+        }
+    }
 
     // Obsługa przycisku wylogowania
     const logoutButton = document.getElementById('logout-button');
-    logoutButton.addEventListener('click', logout);
+    if (logoutButton) {
+        logoutButton.addEventListener('click', logout);
+    }
 
     // Zamykanie modali po kliknięciu poza ich zawartością
     window.addEventListener('click', (e) => {
-        if (e.target === loginModal) {
+        if (loginModal && e.target === loginModal) {
             loginModal.style.display = 'none';
         }
-        if (e.target === registerModal) {
+        if (registerModal && e.target === registerModal) {
             registerModal.style.display = 'none';
         }
     });

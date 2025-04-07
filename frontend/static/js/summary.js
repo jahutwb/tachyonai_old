@@ -409,11 +409,16 @@ function preparePositiveStimuliList(sessionData, rounds) {
         return [];
     }
     
+    console.log('Przygotowywanie listy bodźców z', rounds.length, 'rund');
+    
     // Przygotuj mapę posID -> informacje o bodźcu
     const stimuliMap = new Map();
     
-    // Zbieranie informacji z rund
-    rounds.forEach(round => {
+    // Sortowanie rund według numeru rundy
+    const sortedRounds = [...rounds].sort((a, b) => a.round_number - b.round_number);
+    
+    // Najpierw zbierz wszystkie unikalne pozytywne bodźce
+    sortedRounds.forEach(round => {
         const posId = round.pos_image_id;
         
         if (!stimuliMap.has(posId)) {
@@ -422,42 +427,72 @@ function preparePositiveStimuliList(sessionData, rounds) {
                 total_successes: 0,
                 total_failures: 0,
                 total_profit_factor: 1.0,
-                rounds_participated: 0
+                rounds_participated: 0,
+                origin: 'unknown',
+                parent: null
             });
         }
-        
-        const stimulus = stimuliMap.get(posId);
-        stimulus.rounds_participated += 1;
-        
-        if (round.result === 'SUCCESS') {
-            stimulus.total_successes += 1;
-        } else {
-            stimulus.total_failures += 1;
-        }
-        
-        // Aktualizacja współczynnika zysku
-        stimulus.total_profit_factor *= (1 + round.profit_fraction);
     });
     
-    // Próba dodania informacji o pochodzeniu z pos_pool_json jeśli istnieje
-    if (sessionData.pos_pool_json && Array.isArray(sessionData.pos_pool_json)) {
-        sessionData.pos_pool_json.forEach(poolItem => {
-            if (stimuliMap.has(poolItem.id)) {
-                const stimulus = stimuliMap.get(poolItem.id);
-                stimulus.origin = poolItem.origin || 'unknown';
-                if (poolItem.parent) {
-                    stimulus.parent = poolItem.parent;
-                }
+    // Teraz uzupełnij informacje o pochodzeniu z pos_pool_json, jeśli istnieje
+    if (sessionData.pos_pool_json && sessionData.pos_pool_json.length > 0) {
+        try {
+            // Jeśli pos_pool_json jest stringiem, spróbuj go sparsować
+            let poolData = sessionData.pos_pool_json;
+            if (typeof poolData === 'string') {
+                poolData = JSON.parse(poolData);
             }
-        });
+            
+            // Przejdź przez każdy element w puli
+            poolData.forEach(item => {
+                if (stimuliMap.has(item.id)) {
+                    const stimulus = stimuliMap.get(item.id);
+                    stimulus.origin = item.origin || 'unknown';
+                    if (item.parent) {
+                        stimulus.parent = item.parent;
+                    }
+                }
+            });
+            
+            console.log('Dodano informacje o pochodzeniu z pool_json dla', poolData.length, 'bodźców');
+        } catch (error) {
+            console.error('Błąd przy parsowaniu pos_pool_json:', error);
+        }
     }
+    
+    // Na koniec przejdź przez rundy i zaktualizuj liczniki sukcesów/porażek i współczynniki zysku
+    sortedRounds.forEach(round => {
+        const posId = round.pos_image_id;
+        if (stimuliMap.has(posId)) {
+            const stimulus = stimuliMap.get(posId);
+            stimulus.rounds_participated += 1;
+            
+            // Zaktualizuj liczniki sukcesów/porażek
+            if (round.result === 'SUCCESS') {
+                stimulus.total_successes += 1;
+            } else {
+                stimulus.total_failures += 1;
+            }
+            
+            // Aktualizacja współczynnika zysku - mnożymy przez (1 + profit_fraction)
+            stimulus.total_profit_factor *= (1 + round.profit_fraction);
+        }
+    });
     
     // Konwersja mapy na listę
     const stimuliList = Array.from(stimuliMap.values());
     
     // Sortowanie według liczby sukcesów (malejąco)
-    stimuliList.sort((a, b) => b.total_successes - a.total_successes);
+    stimuliList.sort((a, b) => {
+        // Najpierw porównaj liczbę sukcesów
+        if (b.total_successes !== a.total_successes) {
+            return b.total_successes - a.total_successes;
+        }
+        // W przypadku remisu, porównaj według całkowitego współczynnika zysku
+        return b.total_profit_factor - a.total_profit_factor;
+    });
     
+    console.log('Przygotowano ranking bodźców:', stimuliList);
     return stimuliList;
 }
 
@@ -710,15 +745,23 @@ function renderWealthChart(rounds) {
         return;
     }
     
+    console.log('Generowanie wykresu bogactwa z', rounds.length, 'rund');
+    
+    // Sortowanie rund według numeru rundy (na wszelki wypadek)
+    const sortedRounds = [...rounds].sort((a, b) => a.round_number - b.round_number);
+    
     // Przygotowanie danych
-    const labels = rounds.map((_, index) => `Runda ${index + 1}`);
+    const labels = sortedRounds.map((round) => `Runda ${round.round_number}`);
     const wealthData = [];
     let cumulativeWealth = 1.0; // Zaczynamy od 1.0 (100%)
     
-    for (const round of rounds) {
+    // Generowanie punktów wykresu
+    for (const round of sortedRounds) {
         cumulativeWealth *= (1 + round.profit_fraction);
         wealthData.push((cumulativeWealth - 1) * 100); // Konwersja na procenty
     }
+    
+    console.log('Skumulowane zyski dla każdej rundy:', wealthData);
     
     // Tworzenie wykresu za pomocą Chart.js
     const ctx = document.getElementById('wealth-chart');
@@ -816,6 +859,9 @@ function renderStimuliRanking(ranking, type) {
     // Sortowanie rankingu według liczby sukcesów (malejąco)
     const sortedRanking = [...ranking].sort((a, b) => b.total_successes - a.total_successes);
     
+    // Pobierz token autoryzacji
+    const token = localStorage.getItem('token');
+    
     // Tworzenie elementów rankingu w poziomym układzie
     sortedRanking.forEach((stimulus, index) => {
         const profitPercent = ((stimulus.total_profit_factor - 1) * 100).toFixed(2);
@@ -824,9 +870,10 @@ function renderStimuliRanking(ranking, type) {
         const stimulusCard = document.createElement('div');
         stimulusCard.className = 'stimulus-card';
         
+        // Usunięcie obrazka - zastępujemy kolorowym prostokątem z ID bodźca
         stimulusCard.innerHTML = `
-            <div class="stimulus-image">
-                <img src="/api/images/${stimulus.id}/thumbnail" alt="Bodziec #${stimulus.id}">
+            <div class="stimulus-image" style="background-color: rgba(125, 64, 254, 0.2); display: flex; align-items: center; justify-content: center;">
+                <div style="font-size: 24px; font-weight: bold; color: #7D40FE;">ID: ${stimulus.id}</div>
             </div>
             <div class="stimulus-details">
                 <div class="stimulus-id">ID: ${stimulus.id}</div>
@@ -841,6 +888,42 @@ function renderStimuliRanking(ranking, type) {
         `;
         
         container.appendChild(stimulusCard);
+        
+        // Próbujemy załadować miniaturkę tylko jeśli mamy token
+        if (token) {
+            const thumbnailUrl = `/api/images/${stimulus.id}/thumbnail`;
+            const imageContainer = stimulusCard.querySelector('.stimulus-image');
+            
+            // Tworzymy element obrazu
+            const imgElement = document.createElement('img');
+            imgElement.alt = `Bodziec #${stimulus.id}`;
+            imgElement.style.display = 'none'; // Ukrywamy go do momentu wczytania
+            
+            // Obsługujemy ładowanie obrazka
+            fetch(thumbnailUrl, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                return response.blob();
+            })
+            .then(blob => {
+                const objectURL = URL.createObjectURL(blob);
+                imgElement.src = objectURL;
+                imgElement.style.display = 'block';
+                // Zastępujemy tekst obrazkiem
+                imageContainer.innerHTML = '';
+                imageContainer.appendChild(imgElement);
+            })
+            .catch(error => {
+                console.warn(`Nie można załadować miniaturki dla bodźca #${stimulus.id}:`, error.message);
+                // Pozostawiamy domyślną zawartość - ID jako tekst
+            });
+        }
     });
     
     console.log(`Wyrenderowano ${sortedRanking.length} bodźców w rankingu`);
