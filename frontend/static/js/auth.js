@@ -28,6 +28,24 @@ function isLoggedIn() {
     return !!getToken();
 }
 
+// Funkcja do wyświetlania komunikatów o błędach w formularzu
+function showError(formId, message) {
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'error-message';
+    errorDiv.textContent = message;
+    
+    // Usuń wcześniejsze komunikaty o błędach
+    const existingErrors = document.querySelectorAll(`#${formId} .error-message`);
+    existingErrors.forEach(el => el.remove());
+    
+    // Dodaj nowy komunikat o błędzie
+    const form = document.getElementById(formId);
+    form.prepend(errorDiv);
+    
+    // Dodatkowo pokaż alert dla użytkownika
+    alert(message);
+}
+
 // Aktualizacja widoku na podstawie stanu zalogowania
 function updateAuthView() {
     const loginButton = document.getElementById('login-button');
@@ -62,7 +80,9 @@ async function login(username, password) {
 
         if (!response.ok) {
             const errorData = await response.json();
-            throw new Error(errorData.detail || 'Błąd logowania');
+            const errorMessage = errorData.detail || 'Błąd logowania';
+            showError('login-form', errorMessage);
+            return false;
         }
 
         const data = await response.json();
@@ -77,7 +97,7 @@ async function login(username, password) {
         return true;
     } catch (error) {
         console.error('Błąd logowania:', error);
-        alert(`Błąd logowania: ${error.message}`);
+        showError('login-form', `Błąd logowania: ${error.message}`);
         return false;
     }
 }
@@ -98,11 +118,13 @@ async function register(username, password) {
 
         if (!response.ok) {
             const errorData = await response.json();
-            throw new Error(errorData.detail || 'Błąd rejestracji');
+            const errorMessage = errorData.detail || 'Błąd rejestracji';
+            showError('register-form', errorMessage);
+            return false;
         }
 
         const data = await response.json();
-        alert('Rejestracja zakończona pomyślnie. Możesz się teraz zalogować.');
+        showError('register-form', 'Rejestracja zakończona pomyślnie. Możesz się teraz zalogować.');
         
         // Zamknij modal rejestracji
         const registerModal = document.getElementById('register-modal');
@@ -115,7 +137,7 @@ async function register(username, password) {
         return true;
     } catch (error) {
         console.error('Błąd rejestracji:', error);
-        alert(`Błąd rejestracji: ${error.message}`);
+        showError('register-form', `Błąd rejestracji: ${error.message}`);
         return false;
     }
 }
@@ -175,7 +197,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const confirmPassword = document.getElementById('register-confirm-password').value;
 
         if (password !== confirmPassword) {
-            alert('Hasła nie są zgodne!');
+            showError('register-form', 'Hasła nie są zgodne!');
             return;
         }
 
