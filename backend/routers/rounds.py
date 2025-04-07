@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 import random
 import logging
 import traceback
+from sqlalchemy.sql import func
 
 from ..database import get_db
 from ..models import User, Session as SessionModel, Round, Image, ImageTypeEnum
@@ -112,70 +113,154 @@ def submit_round_choice(
     db: Session = Depends(get_db),
 ):
     """Przetwarza wybór użytkownika w rundzie i zwraca wynik."""
-    # Sprawdź, czy runda istnieje
-    round_obj = db.query(Round).filter(Round.id == choice.round_id).first()
-    if not round_obj:
-        raise HTTPException(status_code=404, detail="Runda nie znaleziona")
-    
-    # Sprawdź, czy sesja należy do bieżącego użytkownika
-    session = db.query(SessionModel).filter(SessionModel.id == round_obj.session_id).first()
-    if not session or session.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Brak dostępu do tej rundy")
-    
-    # Określ akcję użytkownika na podstawie strony i przypisanej akcji
-    if choice.side == "LEFT":
-        user_action = round_obj.left_action
-    else:  # RIGHT
-        user_action = round_obj.right_action
+    try:
+        # Sprawdź, czy runda istnieje
+        round_obj = db.query(Round).filter(Round.id == choice.round_id).first()
+        if not round_obj:
+            raise HTTPException(status_code=404, detail="Runda nie znaleziona")
         
-    start_price = round_obj.start_price
-    
-    # Dla uproszczenia, losowo generujemy zmianę ceny
-    price_change = random.uniform(-0.01, 0.01)  # +/- 1%
-    end_price = start_price * (1 + price_change)
-    
-    # Obliczanie zysku
-    if (user_action == "BUY" and price_change > 0) or (user_action == "SELL" and price_change < 0):
-        result = "SUCCESS"
-        profit_fraction = abs(price_change)
-        # Obrazek pozytywny
-        stimulus_id = round_obj.pos_image_id
-    else:
-        result = "FAILURE"
-        profit_fraction = -abs(price_change)
-        # Obrazek negatywny
-        stimulus_id = round_obj.neg_image_id
-        # Zmniejsz pozostałe pary tylko w przypadku porażki
-        session.remaining_pairs -= 1
-    
-    # Aktualizacja rundy
-    round_obj.user_choice_side = choice.side
-    round_obj.user_action = user_action
-    round_obj.end_price = end_price
-    round_obj.profit_fraction = profit_fraction
-    round_obj.result = result
-    
-    # Aktualizacja sesji
-    session.session_profit_factor *= (1 + profit_fraction)
-    
-    if session.remaining_pairs <= 0:
-        session.status = "COMPLETED"
-    
-    db.commit()
-    db.refresh(round_obj)
-    
-    # Zwróć URL obrazka bodźca
-    stimulus = db.query(Image).filter(Image.id == stimulus_id).first()
-    stimulus_url = f"/api/images/{stimulus_id}/thumbnail" if stimulus else None
-    
-    return {
-        "round_id": round_obj.id,
-        "session_id": round_obj.session_id,
-        "start_price": round_obj.start_price,
-        "end_price": round_obj.end_price,
-        "profit_fraction": round_obj.profit_fraction,
-        "result": round_obj.result,
-        "remaining_pairs": session.remaining_pairs,
-        "session_profit_factor": session.session_profit_factor,
-        "stimulus_url": stimulus_url
-    } 
+        # Sprawdź, czy sesja należy do bieżącego użytkownika
+        session = db.query(SessionModel).filter(SessionModel.id == round_obj.session_id).first()
+        if not session or session.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Brak dostępu do tej rundy")
+        
+        # Określ akcję użytkownika na podstawie strony i przypisanej akcji
+        if choice.side == "LEFT":
+            user_action = round_obj.left_action
+        else:  # RIGHT
+            user_action = round_obj.right_action
+            
+        start_price = round_obj.start_price
+        
+        # Dla uproszczenia, losowo generujemy zmianę ceny
+        price_change = random.uniform(-0.01, 0.01)  # +/- 1%
+        end_price = start_price * (1 + price_change)
+        
+        # Obliczanie zysku
+        if (user_action == "BUY" and price_change > 0) or (user_action == "SELL" and price_change < 0):
+            result = "SUCCESS"
+            profit_fraction = abs(price_change)
+            # Obrazek pozytywny
+            stimulus_id = round_obj.pos_image_id
+            
+            # Pobierz obiekty obrazów
+            pos_image = db.query(Image).filter(Image.id == round_obj.pos_image_id).first()
+            neg_image = db.query(Image).filter(Image.id == round_obj.neg_image_id).first()
+            
+            if pos_image:
+                # Aktualizuj liczniki dla obrazu pozytywnego (wyświetlony w przypadku sukcesu)
+                pos_image.total_successes += 1
+                pos_image.total_profit_factor *= (1 + profit_fraction)
+                
+                # Aktualizuj pole pos_pool_json w sesji
+                if session.pos_pool_json:
+                    pos_pool = session.pos_pool_json
+                    for item in pos_pool:
+                        if item["id"] == pos_image.id:
+                            item["successes"] = item.get("successes", 0) + 1
+                            break
+                    session.pos_pool_json = pos_pool
+            
+            if neg_image:
+                # Negatywny obraz przetrwał rundę (nie został wyświetlony)
+                neg_image.total_successes += 1
+                neg_image.total_profit_factor *= (1 + profit_fraction)
+                
+                # Aktualizuj pole neg_pool_json w sesji
+                if session.neg_pool_json:
+                    neg_pool = session.neg_pool_json
+                    for item in neg_pool:
+                        if item["id"] == neg_image.id:
+                            item["successes"] = item.get("successes", 0) + 1
+                            break
+                    session.neg_pool_json = neg_pool
+        else:
+            result = "FAILURE"
+            profit_fraction = -abs(price_change)
+            # Obrazek negatywny
+            stimulus_id = round_obj.neg_image_id
+            # Zmniejsz pozostałe pary tylko w przypadku porażki
+            session.remaining_pairs -= 1
+            
+            # Pobierz obiekty obrazów
+            pos_image = db.query(Image).filter(Image.id == round_obj.pos_image_id).first()
+            neg_image = db.query(Image).filter(Image.id == round_obj.neg_image_id).first()
+            
+            if pos_image:
+                # Aktualizuj liczniki dla obrazu pozytywnego (nie wyświetlony w przypadku porażki)
+                pos_image.total_failures += 1
+                pos_image.total_profit_factor *= (1 + profit_fraction)
+                
+                # Aktualizuj pole pos_pool_json w sesji
+                if session.pos_pool_json:
+                    pos_pool = session.pos_pool_json
+                    for item in pos_pool:
+                        if item["id"] == pos_image.id:
+                            item["failures"] = item.get("failures", 0) + 1
+                            break
+                    session.pos_pool_json = pos_pool
+            
+            if neg_image:
+                # Aktualizuj liczniki dla obrazu negatywnego (wyświetlony w przypadku porażki)
+                neg_image.total_failures += 1
+                neg_image.total_profit_factor *= (1 + profit_fraction)
+                
+                # Aktualizuj pole neg_pool_json w sesji
+                if session.neg_pool_json:
+                    neg_pool = session.neg_pool_json
+                    for item in neg_pool:
+                        if item["id"] == neg_image.id:
+                            item["failures"] = item.get("failures", 0) + 1
+                            break
+                    session.neg_pool_json = neg_pool
+            
+            # W przypadku porażki usuwamy obie pary z puli (nie zmieniamy JSON, tylko flagę remaining_pairs)
+        
+        # Aktualizacja rundy
+        round_obj.user_choice_side = choice.side
+        round_obj.user_action = user_action
+        round_obj.end_price = end_price
+        round_obj.profit_fraction = profit_fraction
+        round_obj.result = result
+        round_obj.completed_at = func.now()
+        
+        # Aktualizacja sesji
+        session.session_profit_factor *= (1 + profit_fraction)
+        
+        if session.remaining_pairs <= 0:
+            session.status = "COMPLETED"
+            session.ended_at = func.now()
+        
+        # Zapisz wszystkie zmiany do bazy danych
+        db.commit()
+        db.refresh(round_obj)
+        db.refresh(session)
+        if pos_image:
+            db.refresh(pos_image)
+        if neg_image:
+            db.refresh(neg_image)
+        
+        # Zwróć URL obrazka bodźca
+        stimulus = db.query(Image).filter(Image.id == stimulus_id).first()
+        stimulus_url = f"/api/images/{stimulus_id}/thumbnail" if stimulus else None
+        
+        logger.info(f"Zakończono rundę {round_obj.id} z wynikiem {result}, profit_fraction={profit_fraction}")
+        
+        return {
+            "round_id": round_obj.id,
+            "session_id": round_obj.session_id,
+            "start_price": round_obj.start_price,
+            "end_price": round_obj.end_price,
+            "profit_fraction": round_obj.profit_fraction,
+            "result": round_obj.result,
+            "remaining_pairs": session.remaining_pairs,
+            "session_profit_factor": session.session_profit_factor,
+            "stimulus_url": stimulus_url
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Błąd w submit_round_choice: {str(e)}")
+        logger.error(traceback.format_exc())
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Błąd przetwarzania wyboru: {str(e)}") 

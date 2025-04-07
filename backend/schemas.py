@@ -232,8 +232,10 @@ class SessionSummary(BaseModel):
     success_count: int
     failure_count: int
     round_count: int
-    positive_stimuli: Optional[List[Any]] = None
-    negative_stimuli: Optional[List[Any]] = None
+    pos_stimuli: Optional[List[Any]] = None
+    neg_stimuli: Optional[List[Any]] = None
+    pos_ranking: Optional[List[Any]] = None
+    neg_ranking: Optional[List[Any]] = None
 
     class Config:
         from_attributes = True
