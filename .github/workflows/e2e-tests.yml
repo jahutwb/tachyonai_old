@@ -1,0 +1,62 @@
+name: Testy End-to-End
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+
+jobs:
+  e2e-tests:
+    runs-on: ubuntu-latest
+    
+    services:
+      # Możemy uruchomić dodatkowy serwis, jeśli aplikacja wymaga bazy danych, np. PostgreSQL
+      # Tutaj zamiast tego używamy SQLite, więc nie potrzebujemy dodatkowych serwisów
+
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Konfiguracja Pythona
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          
+      - name: Instalacja zależności Pythona
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          
+      - name: Konfiguracja Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          
+      - name: Instalacja zależności Node.js
+        run: |
+          npm install
+          
+      - name: Przygotowanie bazy danych testowej
+        run: |
+          python -c "from backend.models import Base, engine; Base.metadata.create_all(engine)"
+          python -m backend.scripts.init_test_db
+          
+      - name: Uruchomienie testów E2E
+        run: |
+          npm run test:e2e
+        env:
+          # Zmienne środowiskowe dla testów
+          DATABASE_URL: 'sqlite:///test.db'
+          REAL_BTC_PRICE: 'false'
+          JWT_SECRET: 'test_secret_key'
+          
+      - name: Zarchiwizuj logi i zrzuty ekranu (w przypadku niepowodzenia)
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-logs-and-screenshots
+          path: |
+            test-results/
+            logs/
+            screenshots/ 

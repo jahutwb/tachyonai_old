@@ -1,0 +1,14 @@
+{
+  "name": "tachyonai-e2e",
+  "version": "1.0.0",
+  "description": "Testy End-to-End dla aplikacji tachyonai",
+  "scripts": {
+    "test": "jest",
+    "test:e2e": "jest --config=jest.config.js"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "jest-puppeteer": "^9.0.1",
+    "puppeteer": "^21.9.0"
+  }
+} 
