@@ -401,6 +401,66 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 });
 
+// Funkcja tworząca listę pozytywnych bodźców z danymi z sesji
+function preparePositiveStimuliList(sessionData, rounds) {
+    // Sprawdzamy, czy mamy sensowne dane
+    if (!sessionData || !rounds || rounds.length === 0) {
+        console.log('Brak danych do przygotowania listy bodźców');
+        return [];
+    }
+    
+    // Przygotuj mapę posID -> informacje o bodźcu
+    const stimuliMap = new Map();
+    
+    // Zbieranie informacji z rund
+    rounds.forEach(round => {
+        const posId = round.pos_image_id;
+        
+        if (!stimuliMap.has(posId)) {
+            stimuliMap.set(posId, {
+                id: posId,
+                total_successes: 0,
+                total_failures: 0,
+                total_profit_factor: 1.0,
+                rounds_participated: 0
+            });
+        }
+        
+        const stimulus = stimuliMap.get(posId);
+        stimulus.rounds_participated += 1;
+        
+        if (round.result === 'SUCCESS') {
+            stimulus.total_successes += 1;
+        } else {
+            stimulus.total_failures += 1;
+        }
+        
+        // Aktualizacja współczynnika zysku
+        stimulus.total_profit_factor *= (1 + round.profit_fraction);
+    });
+    
+    // Próba dodania informacji o pochodzeniu z pos_pool_json jeśli istnieje
+    if (sessionData.pos_pool_json && Array.isArray(sessionData.pos_pool_json)) {
+        sessionData.pos_pool_json.forEach(poolItem => {
+            if (stimuliMap.has(poolItem.id)) {
+                const stimulus = stimuliMap.get(poolItem.id);
+                stimulus.origin = poolItem.origin || 'unknown';
+                if (poolItem.parent) {
+                    stimulus.parent = poolItem.parent;
+                }
+            }
+        });
+    }
+    
+    // Konwersja mapy na listę
+    const stimuliList = Array.from(stimuliMap.values());
+    
+    // Sortowanie według liczby sukcesów (malejąco)
+    stimuliList.sort((a, b) => b.total_successes - a.total_successes);
+    
+    return stimuliList;
+}
+
 // Funkcja ładująca podsumowanie sesji
 async function loadSessionSummary(sessionId) {
     try {
@@ -490,7 +550,9 @@ async function loadSessionSummary(sessionId) {
             }
             
             if (sessionSuccessRateElement) {
-                sessionSuccessRateElement.textContent = `${Math.round((sessionSummary.success_count / (sessionSummary.success_count + sessionSummary.failure_count)) * 100)}%`;
+                const totalRounds = sessionSummary.success_count + sessionSummary.failure_count;
+                const successRate = totalRounds > 0 ? Math.round((sessionSummary.success_count / totalRounds) * 100) : 0;
+                sessionSuccessRateElement.textContent = `${successRate}%`;
             } else {
                 console.error('Element sessionSuccessRateElement nie istnieje - nie można renderować statystyk sesji');
             }
@@ -507,14 +569,22 @@ async function loadSessionSummary(sessionId) {
                 console.error('Element wealth-chart nie istnieje - nie można renderować wykresu bogactwa');
             }
             
-            // Bezpieczne renderowanie rankingów, jeśli są dostępne
+            // Generowanie listy bodźców i renderowanie rankingu
             const posRankingElement = document.getElementById('positive-stimulus-ranking');
             if (posRankingElement) {
+                // Najpierw spróbuj użyć gotowego rankingu z API
                 if (sessionSummary.pos_ranking && sessionSummary.pos_ranking.length > 0) {
                     renderStimuliRanking(sessionSummary.pos_ranking, 'pos');
                 } else {
-                    console.log('Brak danych rankingowych dla bodźców pozytywnych');
-                    posRankingElement.innerHTML = '<p>Brak danych dla rankingu bodźców pozytywnych</p>';
+                    // Jeśli brak rankingu, generuj na podstawie danych rund
+                    console.log('Brak gotowego rankingu, generowanie na podstawie rund...');
+                    const posStimuli = preparePositiveStimuliList(currentSession, sessionRounds);
+                    if (posStimuli.length > 0) {
+                        renderStimuliRanking(posStimuli, 'pos');
+                    } else {
+                        console.log('Brak danych rankingowych dla bodźców pozytywnych');
+                        posRankingElement.innerHTML = '<p class="empty-message">Brak danych dla rankingu bodźców pozytywnych</p>';
+                    }
                 }
             } else {
                 console.error('Element positive-stimulus-ranking nie istnieje w dokumencie');
@@ -632,6 +702,14 @@ async function loadSessionSummary(sessionId) {
 
 // Funkcja renderująca wykres bogactwa
 function renderWealthChart(rounds) {
+    if (!rounds || rounds.length === 0) {
+        console.log('Brak danych do wyświetlenia wykresu bogactwa');
+        if (document.getElementById('wealth-chart')) {
+            document.getElementById('wealth-chart').parentNode.innerHTML = '<p class="empty-message">Brak danych do wyświetlenia wykresu bogactwa</p>';
+        }
+        return;
+    }
+    
     // Przygotowanie danych
     const labels = rounds.map((_, index) => `Runda ${index + 1}`);
     const wealthData = [];
@@ -643,13 +721,20 @@ function renderWealthChart(rounds) {
     }
     
     // Tworzenie wykresu za pomocą Chart.js
-    const ctx = document.getElementById('wealth-chart').getContext('2d');
+    const ctx = document.getElementById('wealth-chart');
+    
+    if (!ctx) {
+        console.error('Nie znaleziono elementu canvas do wykresu bogactwa');
+        return;
+    }
+    
+    const ctxContext = ctx.getContext('2d');
     
     if (sessionWealthChart) {
         sessionWealthChart.destroy();
     }
     
-    sessionWealthChart = new Chart(ctx, {
+    sessionWealthChart = new Chart(ctxContext, {
         type: 'line',
         data: {
             labels: labels,
@@ -665,6 +750,7 @@ function renderWealthChart(rounds) {
         },
         options: {
             responsive: true,
+            maintainAspectRatio: false,
             scales: {
                 x: {
                     grid: {
@@ -681,7 +767,7 @@ function renderWealthChart(rounds) {
                     ticks: {
                         color: '#CCCCCC',
                         callback: function(value) {
-                            return value + '%';
+                            return value.toFixed(2) + '%';
                         }
                     }
                 }
@@ -705,11 +791,13 @@ function renderWealthChart(rounds) {
             }
         }
     });
+    
+    console.log('Wykres bogactwa został wygenerowany');
 }
 
 // Funkcja renderująca ranking bodźców
 function renderStimuliRanking(ranking, type) {
-    // Dla tego HTML obslugujemy tylko ranking pozytywny (type === 'pos')
+    // Dla tego HTML obsługujemy tylko ranking pozytywny (type === 'pos')
     const container = document.getElementById('positive-stimulus-ranking');
     
     if (!container) {
@@ -717,41 +805,45 @@ function renderStimuliRanking(ranking, type) {
         return;
     }
     
-    const title = 'Ranking bodźców pozytywnych';
-    
     if (!ranking || ranking.length === 0) {
-        container.innerHTML = `<p>Brak danych dla ${title}</p>`;
+        container.innerHTML = `<p class="empty-message">Brak danych rankingowych dla bodźców pozytywnych</p>`;
         return;
     }
     
-    // Przygotowanie HTML
-    let html = `<div class="ranking-container">`;
+    // Czyszczenie kontenera
+    container.innerHTML = '';
     
-    ranking.forEach((stimulus, index) => {
-        html += `
-            <div class="stimulus-rank-item">
-                <div class="stimulus-rank-number">#${index + 1}</div>
-                <div class="stimulus-rank-image">
-                    <img src="/api/images/${stimulus.id}/thumbnail" alt="Bodziec #${stimulus.id}">
+    // Sortowanie rankingu według liczby sukcesów (malejąco)
+    const sortedRanking = [...ranking].sort((a, b) => b.total_successes - a.total_successes);
+    
+    // Tworzenie elementów rankingu w poziomym układzie
+    sortedRanking.forEach((stimulus, index) => {
+        const profitPercent = ((stimulus.total_profit_factor - 1) * 100).toFixed(2);
+        const profitClass = profitPercent >= 0 ? 'positive' : 'negative';
+        
+        const stimulusCard = document.createElement('div');
+        stimulusCard.className = 'stimulus-card';
+        
+        stimulusCard.innerHTML = `
+            <div class="stimulus-image">
+                <img src="/api/images/${stimulus.id}/thumbnail" alt="Bodziec #${stimulus.id}">
+            </div>
+            <div class="stimulus-details">
+                <div class="stimulus-id">ID: ${stimulus.id}</div>
+                <div class="stimulus-success">Sukcesy: ${stimulus.total_successes}</div>
+                <div class="stimulus-origin">
+                    ${stimulus.origin === 'child' ? 'Pochodzenie: Dziecko' : 
+                      stimulus.origin === 'bought' ? 'Pochodzenie: Kupiony' : 'Pochodzenie: Losowy'}
                 </div>
-                <div class="stimulus-rank-details">
-                    <div class="stimulus-id">ID: ${stimulus.id}</div>
-                    <div class="stimulus-success-count">Sukcesy: ${stimulus.total_successes}</div>
-                    <div class="stimulus-origin">
-                        Pochodzenie: ${
-                            stimulus.origin === 'child' ? 'Dziecko' : 
-                            stimulus.origin === 'bought' ? 'Kupiony' : 'Losowy'
-                        }
-                        ${stimulus.parent ? `<span class="stimulus-parent-link">(Rodzic: ${stimulus.parent})</span>` : ''}
-                    </div>
-                    <div class="stimulus-profit">Zysk: ${((stimulus.total_profit_factor - 1) * 100).toFixed(2)}%</div>
-                </div>
+                ${stimulus.parent ? `<div class="stimulus-parent">Rodzic: #${stimulus.parent}</div>` : ''}
+                <div class="stimulus-profit ${profitClass}">Zysk: ${profitPercent}%</div>
             </div>
         `;
+        
+        container.appendChild(stimulusCard);
     });
     
-    html += '</div>';
-    container.innerHTML = html;
+    console.log(`Wyrenderowano ${sortedRanking.length} bodźców w rankingu`);
 }
 
 // Funkcja renderująca szczegóły rund
