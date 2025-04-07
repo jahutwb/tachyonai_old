@@ -385,7 +385,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 // Funkcja ładująca podsumowanie sesji
 async function loadSessionSummary(sessionId) {
     try {
-        showLoading('Ładowanie podsumowania sesji...');
+        showLoadingOverlay('Ładowanie podsumowania sesji...');
         
         // Pobieranie danych sesji
         const sessionResponse = await fetch(`/api/sessions/${sessionId}`, {
@@ -395,10 +395,12 @@ async function loadSessionSummary(sessionId) {
         });
         
         if (!sessionResponse.ok) {
+            console.error(`Błąd pobierania sesji: ${sessionResponse.status} - ${sessionResponse.statusText}`);
             throw new Error('Błąd podczas pobierania danych sesji');
         }
         
         currentSession = await sessionResponse.json();
+        console.log('Pobrano dane sesji:', currentSession);
         
         // Pobieranie rund sesji
         const roundsResponse = await fetch(`/api/sessions/${sessionId}/rounds`, {
@@ -408,75 +410,153 @@ async function loadSessionSummary(sessionId) {
         });
         
         if (!roundsResponse.ok) {
+            console.error(`Błąd pobierania rund: ${roundsResponse.status} - ${roundsResponse.statusText}`);
             throw new Error('Błąd podczas pobierania danych rund');
         }
         
         sessionRounds = await roundsResponse.json();
+        console.log('Pobrano dane rund:', sessionRounds);
         
-        // Pobieranie podsumowania sesji
-        const summaryResponse = await fetch(`/api/sessions/${sessionId}/summary`, {
-            headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`
-            }
-        });
-        
-        if (!summaryResponse.ok) {
-            console.error('Błąd pobierania podsumowania sesji:', await summaryResponse.text());
+        try {
+            // Pobieranie podsumowania sesji
+            const summaryResponse = await fetch(`/api/sessions/${sessionId}/summary`, {
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                }
+            });
             
-            // Kontynuuj bez podsumowania
-            renderSessionStats({
-                success_count: currentSession.success_count || 0,
-                failure_count: currentSession.failure_count || 0,
+            let sessionSummary;
+            
+            if (!summaryResponse.ok) {
+                console.warn(`Błąd pobierania podsumowania sesji: ${summaryResponse.status} - ${summaryResponse.statusText}`);
+                console.warn('Tworzenie zastępczego podsumowania z dostępnych danych');
+                
+                // Tworzymy zastępcze podsumowanie z danych, które udało się pobrać
+                sessionSummary = {
+                    id: currentSession.id,
+                    status: currentSession.status,
+                    started_at: currentSession.started_at,
+                    session_profit_factor: currentSession.session_profit_factor || 1.0,
+                    remaining_pairs: currentSession.remaining_pairs || 0,
+                    success_count: sessionRounds.filter(round => round.result === 'SUCCESS').length,
+                    failure_count: sessionRounds.filter(round => round.result === 'FAILURE').length,
+                    round_count: sessionRounds.length,
+                    pos_stimuli: [],
+                    neg_stimuli: [],
+                    pos_ranking: [],
+                    neg_ranking: []
+                };
+            } else {
+                sessionSummary = await summaryResponse.json();
+                console.log('Pobrano podsumowanie sesji:', sessionSummary);
+            }
+            
+            // Renderowanie danych
+            renderSessionStats(sessionSummary);
+            renderWealthChart(sessionRounds);
+            
+            // Bezpieczne renderowanie rankingów, jeśli są dostępne
+            const posRankingElement = document.getElementById('positive-stimulus-ranking');
+            if (posRankingElement) {
+                if (sessionSummary.pos_ranking && sessionSummary.pos_ranking.length > 0) {
+                    renderStimuliRanking(sessionSummary.pos_ranking, 'pos');
+                } else {
+                    console.log('Brak danych rankingowych dla bodźców pozytywnych');
+                    posRankingElement.innerHTML = '<p>Brak danych dla rankingu bodźców pozytywnych</p>';
+                }
+            } else {
+                console.error('Element positive-stimulus-ranking nie istnieje w dokumencie');
+            }
+            
+            const negRankingElement = document.getElementById('neg-stimuli-ranking');
+            if (negRankingElement) {
+                if (sessionSummary.neg_ranking && sessionSummary.neg_ranking.length > 0) {
+                    renderStimuliRanking(sessionSummary.neg_ranking, 'neg');
+                } else {
+                    console.log('Brak danych rankingowych dla bodźców negatywnych');
+                    negRankingElement.innerHTML = '<p>Brak danych dla rankingu bodźców negatywnych</p>';
+                }
+            }
+            
+            renderRoundsDetails(sessionRounds);
+            
+        } catch (summaryError) {
+            console.error('Błąd przetwarzania podsumowania:', summaryError);
+            
+            // Renderuj dostępne dane nawet bez podsumowania
+            const fallbackSummary = {
+                id: currentSession.id,
+                status: currentSession.status || 'UNKNOWN',
+                started_at: currentSession.started_at || new Date(),
                 session_profit_factor: currentSession.session_profit_factor || 1.0,
                 remaining_pairs: currentSession.remaining_pairs || 0,
-            });
+                success_count: sessionRounds.filter(round => round.result === 'SUCCESS').length,
+                failure_count: sessionRounds.filter(round => round.result === 'FAILURE').length,
+                round_count: sessionRounds.length
+            };
+            
+            renderSessionStats(fallbackSummary);
             renderWealthChart(sessionRounds);
             renderRoundsDetails(sessionRounds);
             
-            hideLoading();
-            return;
+            const posRankingElement = document.getElementById('positive-stimulus-ranking');
+            if (posRankingElement) {
+                posRankingElement.innerHTML = '<p>Nie udało się załadować rankingu bodźców pozytywnych</p>';
+            }
+            
+            const negRankingElement = document.getElementById('neg-stimuli-ranking');
+            if (negRankingElement) {
+                negRankingElement.innerHTML = '<p>Nie udało się załadować rankingu bodźców negatywnych</p>';
+            }
         }
         
-        const sessionSummary = await summaryResponse.json();
-        console.log('Podsumowanie sesji:', sessionSummary);
-        
-        // Renderowanie danych
-        renderSessionStats(sessionSummary);
-        renderWealthChart(sessionRounds);
-        
-        // Bezpieczne renderowanie rankingów, jeśli są dostępne
-        if (sessionSummary.pos_ranking) {
-            renderStimuliRanking(sessionSummary.pos_ranking, 'pos');
-        } else {
-            console.log('Brak danych rankingowych dla bodźców pozytywnych');
-            document.getElementById('pos-stimuli-ranking').innerHTML = '<p>Brak danych dla rankingu bodźców pozytywnych</p>';
-        }
-        
-        if (sessionSummary.neg_ranking) {
-            renderStimuliRanking(sessionSummary.neg_ranking, 'neg');
-        } else {
-            console.log('Brak danych rankingowych dla bodźców negatywnych');
-            document.getElementById('neg-stimuli-ranking').innerHTML = '<p>Brak danych dla rankingu bodźców negatywnych</p>';
-        }
-        
-        renderRoundsDetails(sessionRounds);
-        
-        hideLoading();
+        hideLoadingOverlay();
     } catch (error) {
         console.error('Błąd ładowania podsumowania sesji:', error);
-        hideLoading();
-        alert('Wystąpił błąd podczas ładowania podsumowania sesji. Spróbuj ponownie.');
+        hideLoadingOverlay();
+        
+        // Wyświetl bardziej szczegółowy komunikat błędu
+        alert(`Wystąpił błąd podczas ładowania podsumowania sesji: ${error.message}`);
+        
+        // Sprawdź, czy udało się załadować jakieś dane i spróbuj je wyświetlić
+        if (currentSession && sessionRounds) {
+            const fallbackSummary = {
+                id: currentSession.id,
+                status: currentSession.status || 'UNKNOWN',
+                started_at: currentSession.started_at || new Date(),
+                session_profit_factor: currentSession.session_profit_factor || 1.0,
+                remaining_pairs: currentSession.remaining_pairs || 0,
+                success_count: sessionRounds.filter(round => round.result === 'SUCCESS').length,
+                failure_count: sessionRounds.filter(round => round.result === 'FAILURE').length,
+                round_count: sessionRounds.length
+            };
+            
+            renderSessionStats(fallbackSummary);
+            renderWealthChart(sessionRounds);
+            renderRoundsDetails(sessionRounds);
+        }
     }
 }
 
 // Funkcja renderująca statystyki sesji
 function renderSessionStats(summary) {
-    // Obliczenie podstawowych statystyk
-    const totalRounds = sessionRounds.length;
-    const successCount = sessionRounds.filter(round => round.result === 'SUCCESS').length;
-    const failureCount = totalRounds - successCount;
+    if (!summary) {
+        console.error('Brak danych podsumowania do renderowania statystyk');
+        sessionStatsContainer.innerHTML = '<div class="error-message">Nie można wyświetlić statystyk - brak danych.</div>';
+        return;
+    }
+    
+    console.log('Renderowanie statystyk sesji:', summary);
+    
+    // Obliczenie podstawowych statystyk z dostępnych danych
+    const totalRounds = summary.round_count || sessionRounds.length || 0;
+    const successCount = summary.success_count || sessionRounds.filter(round => round.result === 'SUCCESS').length || 0;
+    const failureCount = summary.failure_count || sessionRounds.filter(round => round.result === 'FAILURE').length || 0;
     const successRate = totalRounds > 0 ? (successCount / totalRounds) * 100 : 0;
-    const profitFactor = (currentSession.session_profit_factor - 1) * 100;
+    
+    // Obliczenie zysku - użyj profit_factor z podsumowania lub z sesji
+    const sessionProfitFactor = summary.session_profit_factor || currentSession.session_profit_factor || 1.0;
+    const profitFactor = (sessionProfitFactor - 1) * 100;
     
     // Renderowanie HTML
     sessionStatsContainer.innerHTML = `
@@ -589,7 +669,13 @@ function renderWealthChart(rounds) {
 
 // Funkcja renderująca ranking bodźców
 function renderStimuliRanking(ranking, type) {
-    const container = type === 'pos' ? posRankingContainer : negRankingContainer;
+    const container = type === 'pos' ? document.getElementById('positive-stimulus-ranking') : document.getElementById('neg-stimuli-ranking');
+    
+    if (!container) {
+        console.error(`Nie znaleziono kontenera dla typu: ${type}`);
+        return;
+    }
+    
     const title = type === 'pos' ? 'Ranking bodźców pozytywnych' : 'Ranking bodźców negatywnych';
     
     if (!ranking || ranking.length === 0) {
@@ -682,7 +768,7 @@ function toggleRoundsDetails() {
 // Funkcja rozpoczynająca nową sesję
 async function startNewSession() {
     try {
-        showLoading('Tworzenie nowej sesji...');
+        showLoadingOverlay('Tworzenie nowej sesji...');
         
         // Wywołanie API do utworzenia nowej sesji
         const response = await fetch('/api/sessions', {
@@ -701,7 +787,7 @@ async function startNewSession() {
         window.location.href = '/game';
     } catch (error) {
         console.error('Błąd rozpoczynania nowej sesji:', error);
-        hideLoading();
+        hideLoadingOverlay();
         alert('Wystąpił błąd podczas tworzenia nowej sesji. Spróbuj ponownie.');
     }
 }
