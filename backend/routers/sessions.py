@@ -82,84 +82,99 @@ def get_session_summary(
         
         logger.info(f"Statystyki sesji {session_id}: success_count={success_count}, failure_count={failure_count}, total_rounds={success_count + failure_count}")
         
-        # Przygotuj listy rankingowe obrazów
+        # Inicjalizacja pustych list dla rankingów, nawet jeśli nie znajdziemy odpowiednich obrazów
         pos_ranking = []
         neg_ranking = []
+        
+        # Inicjalizacja pustych list dla pul bodźców, jeśli nie są dostępne w sesji
+        pos_stimuli = session.pos_pool_json if session.pos_pool_json else []
+        neg_stimuli = session.neg_pool_json if session.neg_pool_json else []
         
         # Jeśli mamy dane w pos_pool_json, przygotuj ranking obrazów pozytywnych
         if session.pos_pool_json:
             logger.info(f"Przygotowuję ranking obrazów pozytywnych, liczba obrazów w puli: {len(session.pos_pool_json)}")
             
-            # Pobierz IDs obrazów z puli
-            pos_ids = [item["id"] for item in session.pos_pool_json]
-            
-            # Pobierz obrazy z bazy danych
-            pos_images = db.query(Image).filter(Image.id.in_(pos_ids)).all()
-            logger.info(f"Znaleziono {len(pos_images)} obrazów pozytywnych w bazie danych")
-            
-            # Utwórz słownik mapujący ID obrazu na jego dane z puli
-            pos_pool_dict = {item["id"]: item for item in session.pos_pool_json}
-            
-            # Tworzenie rankingu obrazów pozytywnych
-            for img in pos_images:
-                pool_data = pos_pool_dict.get(img.id, {})
-                successes = pool_data.get("successes", 0)
+            try:
+                # Pobierz IDs obrazów z puli
+                pos_ids = [item["id"] for item in session.pos_pool_json if "id" in item]
                 
-                logger.info(f"Obraz pozytywny id={img.id}: successes={successes}, total_successes={img.total_successes}, total_failures={img.total_failures}, total_profit_factor={img.total_profit_factor:.6f}")
+                if pos_ids:
+                    # Pobierz obrazy z bazy danych
+                    pos_images = db.query(Image).filter(Image.id.in_(pos_ids)).all()
+                    logger.info(f"Znaleziono {len(pos_images)} obrazów pozytywnych w bazie danych")
+                    
+                    # Utwórz słownik mapujący ID obrazu na jego dane z puli
+                    pos_pool_dict = {item["id"]: item for item in session.pos_pool_json if "id" in item}
+                    
+                    # Tworzenie rankingu obrazów pozytywnych
+                    for img in pos_images:
+                        pool_data = pos_pool_dict.get(img.id, {})
+                        successes = pool_data.get("successes", 0)
+                        
+                        logger.info(f"Obraz pozytywny id={img.id}: successes={successes}, total_successes={img.total_successes}, total_failures={img.total_failures}, total_profit_factor={img.total_profit_factor:.6f}")
+                        
+                        # Dodaj tylko obrazy, które miały conajmniej jeden sukces
+                        if successes > 0:
+                            pos_ranking.append({
+                                "id": img.id,
+                                "total_successes": img.total_successes,
+                                "total_failures": img.total_failures,
+                                "total_profit_factor": img.total_profit_factor,
+                                "origin": pool_data.get("origin", "random"),
+                                "parent": pool_data.get("parent") if pool_data.get("origin") == "child" else None
+                            })
+                            logger.info(f"Dodano obraz id={img.id} do rankingu pozytywnego")
                 
-                # Dodaj tylko obrazy, które miały conajmniej jeden sukces
-                if successes > 0:
-                    pos_ranking.append({
-                        "id": img.id,
-                        "total_successes": img.total_successes,
-                        "total_failures": img.total_failures,
-                        "total_profit_factor": img.total_profit_factor,
-                        "origin": pool_data.get("origin", "random"),
-                        "parent": pool_data.get("parent") if pool_data.get("origin") == "child" else None
-                    })
-                    logger.info(f"Dodano obraz id={img.id} do rankingu pozytywnego")
-            
-            # Sortuj ranking według liczby sukcesów (malejąco)
-            pos_ranking = sorted(pos_ranking, key=lambda x: x["total_successes"], reverse=True)
-            logger.info(f"Ranking obrazów pozytywnych gotowy, liczba obrazów: {len(pos_ranking)}")
+                # Sortuj ranking według liczby sukcesów (malejąco)
+                pos_ranking = sorted(pos_ranking, key=lambda x: x["total_successes"], reverse=True)
+                logger.info(f"Ranking obrazów pozytywnych gotowy, liczba obrazów: {len(pos_ranking)}")
+            except Exception as e:
+                logger.error(f"Błąd podczas przygotowywania rankingu pozytywnego: {str(e)}")
+                logger.error(traceback.format_exc())
         
         # Jeśli mamy dane w neg_pool_json, przygotuj ranking obrazów negatywnych
         if session.neg_pool_json:
             logger.info(f"Przygotowuję ranking obrazów negatywnych, liczba obrazów w puli: {len(session.neg_pool_json)}")
             
-            # Pobierz IDs obrazów z puli
-            neg_ids = [item["id"] for item in session.neg_pool_json]
-            
-            # Pobierz obrazy z bazy danych
-            neg_images = db.query(Image).filter(Image.id.in_(neg_ids)).all()
-            logger.info(f"Znaleziono {len(neg_images)} obrazów negatywnych w bazie danych")
-            
-            # Utwórz słownik mapujący ID obrazu na jego dane z puli
-            neg_pool_dict = {item["id"]: item for item in session.neg_pool_json}
-            
-            # Tworzenie rankingu obrazów negatywnych
-            for img in neg_images:
-                pool_data = neg_pool_dict.get(img.id, {})
-                successes = pool_data.get("successes", 0)
+            try:
+                # Pobierz IDs obrazów z puli
+                neg_ids = [item["id"] for item in session.neg_pool_json if "id" in item]
                 
-                logger.info(f"Obraz negatywny id={img.id}: successes={successes}, total_successes={img.total_successes}, total_failures={img.total_failures}, total_profit_factor={img.total_profit_factor:.6f}")
+                if neg_ids:
+                    # Pobierz obrazy z bazy danych
+                    neg_images = db.query(Image).filter(Image.id.in_(neg_ids)).all()
+                    logger.info(f"Znaleziono {len(neg_images)} obrazów negatywnych w bazie danych")
+                    
+                    # Utwórz słownik mapujący ID obrazu na jego dane z puli
+                    neg_pool_dict = {item["id"]: item for item in session.neg_pool_json if "id" in item}
+                    
+                    # Tworzenie rankingu obrazów negatywnych
+                    for img in neg_images:
+                        pool_data = neg_pool_dict.get(img.id, {})
+                        successes = pool_data.get("successes", 0)
+                        
+                        logger.info(f"Obraz negatywny id={img.id}: successes={successes}, total_successes={img.total_successes}, total_failures={img.total_failures}, total_profit_factor={img.total_profit_factor:.6f}")
+                        
+                        # Dodaj tylko obrazy, które miały conajmniej jeden sukces (przetrwanie)
+                        if successes > 0:
+                            neg_ranking.append({
+                                "id": img.id,
+                                "total_successes": img.total_successes,
+                                "total_failures": img.total_failures,
+                                "total_profit_factor": img.total_profit_factor,
+                                "origin": pool_data.get("origin", "random"),
+                                "parent": pool_data.get("parent") if pool_data.get("origin") == "child" else None
+                            })
+                            logger.info(f"Dodano obraz id={img.id} do rankingu negatywnego")
                 
-                # Dodaj tylko obrazy, które miały conajmniej jeden sukces (przetrwanie)
-                if successes > 0:
-                    neg_ranking.append({
-                        "id": img.id,
-                        "total_successes": img.total_successes,
-                        "total_failures": img.total_failures,
-                        "total_profit_factor": img.total_profit_factor,
-                        "origin": pool_data.get("origin", "random"),
-                        "parent": pool_data.get("parent") if pool_data.get("origin") == "child" else None
-                    })
-                    logger.info(f"Dodano obraz id={img.id} do rankingu negatywnego")
-            
-            # Sortuj ranking według liczby sukcesów (malejąco)
-            neg_ranking = sorted(neg_ranking, key=lambda x: x["total_successes"], reverse=True)
-            logger.info(f"Ranking obrazów negatywnych gotowy, liczba obrazów: {len(neg_ranking)}")
+                # Sortuj ranking według liczby sukcesów (malejąco)
+                neg_ranking = sorted(neg_ranking, key=lambda x: x["total_successes"], reverse=True)
+                logger.info(f"Ranking obrazów negatywnych gotowy, liczba obrazów: {len(neg_ranking)}")
+            except Exception as e:
+                logger.error(f"Błąd podczas przygotowywania rankingu negatywnego: {str(e)}")
+                logger.error(traceback.format_exc())
         
+        # Utwórz obiekt podsumowania
         summary = {
             "id": session.id,
             "status": session.status,
@@ -169,8 +184,8 @@ def get_session_summary(
             "success_count": success_count,
             "failure_count": failure_count,
             "round_count": success_count + failure_count,
-            "pos_stimuli": session.pos_pool_json,
-            "neg_stimuli": session.neg_pool_json,
+            "pos_stimuli": pos_stimuli,
+            "neg_stimuli": neg_stimuli,
             "pos_ranking": pos_ranking,
             "neg_ranking": neg_ranking
         }
@@ -186,7 +201,7 @@ def get_session_summary(
         raise HTTPException(status_code=500, detail=f"Błąd serwera: {str(e)}")
 
 
-@router.get("/sessions/{session_id}/rounds", response_model=List[schemas.RoundCreate])
+@router.get("/sessions/{session_id}/rounds", response_model=List[schemas.RoundResponse])
 def get_rounds_for_session(
     session_id: int,
     current_user: User = Depends(get_current_user),

@@ -417,7 +417,8 @@ function preparePositiveStimuliList(sessionData, rounds) {
     // Sortowanie rund według numeru rundy
     const sortedRounds = [...rounds].sort((a, b) => a.round_number - b.round_number);
     
-    // WAŻNE: Przejdź przez WSZYSTKIE rundy, a nie tylko te z sukcesem
+    console.log('Posortowane rundy:', sortedRounds);
+    
     // Zbieramy wszystkie unikalne ID pozytywnych bodźców z wszystkich rund
     sortedRounds.forEach(round => {
         const posId = round.pos_image_id;
@@ -461,9 +462,10 @@ function preparePositiveStimuliList(sessionData, rounds) {
         }
     }
     
-    // Przejdź przez rundy i zaktualizuj liczniki sukcesów/porażek i współczynniki zysku
-    // WAŻNE: W przypadku SUKCESu aktualizujemy również profit_factor
+    // Na koniec przejdź przez rundy i zaktualizuj liczniki sukcesów/porażek i współczynniki zysku
     sortedRounds.forEach(round => {
+        console.log(`Przetwarzanie rundy ${round.round_number}, wynik: ${round.result}, posId: ${round.pos_image_id}, profit_fraction: ${round.profit_fraction}`);
+        
         const posId = round.pos_image_id;
         if (stimuliMap.has(posId)) {
             const stimulus = stimuliMap.get(posId);
@@ -475,9 +477,12 @@ function preparePositiveStimuliList(sessionData, rounds) {
                 stimulus.total_successes += 1;
                 
                 // Aktualizacja współczynnika zysku - tylko dla sukcesów!
-                stimulus.total_profit_factor *= (1 + round.profit_fraction);
-                
-                console.log(`Bodziec #${posId}: Sukces w rundzie ${round.round_number}, nowy profit_factor: ${stimulus.total_profit_factor.toFixed(4)}`);
+                if (round.profit_fraction !== null && !isNaN(round.profit_fraction)) {
+                    stimulus.total_profit_factor *= (1 + round.profit_fraction);
+                    console.log(`Bodziec #${posId}: Sukces w rundzie ${round.round_number}, profit_fraction=${round.profit_fraction}, nowy profit_factor: ${stimulus.total_profit_factor.toFixed(4)}`);
+                } else {
+                    console.warn(`Runda ${round.round_number}: Nieprawidłowa wartość profit_fraction:`, round.profit_fraction);
+                }
             } else {
                 stimulus.total_failures += 1;
             }
@@ -486,6 +491,9 @@ function preparePositiveStimuliList(sessionData, rounds) {
     
     // Konwersja mapy na listę
     const stimuliList = Array.from(stimuliMap.values());
+    
+    // Logowanie wszystkich bodźców przed filtrowaniem
+    console.log('Wszystkie bodźce przed filtrowaniem:', stimuliList);
     
     // WAŻNE: Filtrujemy tylko bodźce z przynajmniej jednym sukcesem!
     const successfulStimuli = stimuliList.filter(stimulus => stimulus.total_successes > 0);
@@ -762,6 +770,18 @@ function renderWealthChart(rounds) {
     // Sortowanie rund według numeru rundy (bardzo ważne!)
     const sortedRounds = [...rounds].sort((a, b) => a.round_number - b.round_number);
     
+    // Debugowanie danych wejściowych
+    console.log('Posortowane rundy do wykresu bogactwa:');
+    sortedRounds.forEach(round => {
+        console.log(`Runda ${round.round_number}: profit_fraction=${round.profit_fraction}, start_price=${round.start_price}, end_price=${round.end_price}, result=${round.result}, user_action=${round.user_action}`);
+    });
+    
+    // Dodatkowe sprawdzenie czy rundy zawierają kompletne dane
+    const incompletedRounds = sortedRounds.filter(r => r.end_price === null || r.end_price === undefined || r.profit_fraction === null || r.profit_fraction === undefined);
+    if (incompletedRounds.length > 0) {
+        console.warn(`Wykryto ${incompletedRounds.length} rund z niekompletnymi danymi. Niektóre rundy mogły zostać przerwane lub nie zostały poprawnie zakończone.`);
+    }
+    
     // Przygotowanie danych
     const labels = sortedRounds.map((round) => `Runda ${round.round_number}`);
     const wealthData = [];
@@ -770,12 +790,37 @@ function renderWealthChart(rounds) {
     
     // Generowanie punktów wykresu
     for (const round of sortedRounds) {
-        cumulativeWealth *= (1 + round.profit_fraction);
+        let profitFraction = 0;
+        
+        // Sprawdzenie, czy profit_fraction jest dostępny
+        if (round.profit_fraction !== null && round.profit_fraction !== undefined && !isNaN(round.profit_fraction)) {
+            profitFraction = round.profit_fraction;
+        } 
+        // Jeśli brak profit_fraction, spróbujmy obliczyć na podstawie start_price i end_price
+        else if (round.start_price && round.end_price && !isNaN(round.start_price) && !isNaN(round.end_price)) {
+            if (round.user_action === 'BUY') {
+                profitFraction = (round.end_price / round.start_price) - 1;
+            } else if (round.user_action === 'SELL') {
+                profitFraction = (round.start_price / round.end_price) - 1;
+            } else {
+                console.warn(`Runda ${round.round_number}: Brak określonej akcji użytkownika (${round.user_action}). Przyjmuję profit_fraction = 0.`);
+                profitFraction = 0;
+            }
+            console.log(`Runda ${round.round_number}: Obliczono profit_fraction = ${profitFraction.toFixed(6)} na podstawie cen.`);
+        } 
+        // Jeśli brak cen lub akcji, przyjmujemy 0
+        else {
+            console.warn(`Runda ${round.round_number}: Brak danych cenowych lub akcji do obliczenia profit_fraction. Przyjmuję 0.`);
+            profitFraction = 0;
+        }
+        
+        // Teraz na pewno mamy wartość liczbową dla profit_fraction
+        cumulativeWealth *= (1 + profitFraction);
         const percentChange = (cumulativeWealth - 1) * 100; // Konwersja na procenty
         wealthData.push(percentChange);
         dataPoints.push({
             round: round.round_number,
-            profit: round.profit_fraction,
+            profit: profitFraction,
             cumulative: cumulativeWealth,
             percent: percentChange
         });
