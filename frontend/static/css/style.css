@@ -590,47 +590,68 @@ a:hover {
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     padding: var(--spacing-lg);
+    text-align: center;
+    margin-bottom: 60px; /* Dodane miejsce na pasek statystyk */
 }
 
-.result-header {
+.result-footer {
+    width: 100%;
     display: flex;
+    justify-content: space-between;
     align-items: center;
-    margin-bottom: var(--spacing-lg);
+    margin-top: var(--spacing-lg);
+    padding: 0 var(--spacing-xl);
+}
+
+.result-info {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    text-align: left;
 }
 
 .result-status {
     font-size: 28px;
     font-weight: bold;
-    margin-right: var(--spacing-lg);
     padding: 8px 16px;
     border-radius: var(--border-radius);
+    margin-bottom: var(--spacing-sm);
 }
 
 .profit-change {
     font-size: 24px;
     font-weight: bold;
+    margin-left: var(--spacing-md);
+}
+
+.next-actions {
+    display: flex;
+    gap: var(--spacing-md);
+    justify-content: center;
+    margin: 0 auto;
 }
 
 .stimulus-container {
     margin: var(--spacing-lg) 0;
-    max-width: 800px;
-    max-height: 600px;
+    max-width: 90%;
+    height: 70vh;
+    max-height: 70vh;
     overflow: hidden;
     border-radius: var(--border-radius);
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
 .stimulus-image {
     width: 100%;
-    height: auto;
+    height: 100%;
     display: block;
-}
-
-.next-actions {
-    margin-top: var(--spacing-lg);
-    display: flex;
-    gap: var(--spacing-md);
+    margin: 0 auto;
+    object-fit: contain;
 }
 
 /* Przycisk mniejszy */

@@ -12,14 +12,22 @@ import logging
 from .database import get_db, engine
 from . import models, schemas, auth
 from .init_db import init_db
-from .routers import sessions_router, rounds_router, images_router, user_router
+from .routers import sessions_router, rounds_router, images_router, user_router, price_router
 
 # Inicjalizacja loggera
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.DEBUG,  # Zwiększenie poziomu logowania z INFO na DEBUG
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s - %(pathname)s:%(lineno)d",
+    handlers=[
+        logging.StreamHandler(),  # Logowanie na standardowe wyjście
+        logging.FileHandler("tachyonai.log")  # Dodatkowo zapis do pliku
+    ]
 )
 logger = logging.getLogger(__name__)
+
+# Ustawienie poziomu dla loggerów bibliotek
+logging.getLogger("uvicorn").setLevel(logging.INFO)
+logging.getLogger("sqlalchemy.engine").setLevel(logging.INFO)
 
 # Inicjalizacja bazy danych
 init_db()
@@ -46,6 +54,7 @@ app.include_router(sessions_router, prefix="/api", tags=["sessions"])
 app.include_router(rounds_router, prefix="/api", tags=["rounds"])
 app.include_router(images_router, prefix="/api", tags=["images"])
 app.include_router(user_router, prefix="/api", tags=["users"])
+app.include_router(price_router, prefix="/api", tags=["price"])
 
 
 @app.get("/")
@@ -129,4 +138,16 @@ async def read_users_me(current_user: models.User = Depends(auth.get_current_use
 @app.get("/health")
 async def health_check():
     """Endpoint sprawdzający stan aplikacji."""
-    return {"status": "ok"} 
+    return {"status": "ok"}
+
+
+@app.get("/ping")
+async def ping():
+    """Prosty endpoint sprawdzający czy serwer działa."""
+    return {"ping": "pong"}
+
+
+# Uruchomienie serwera gdy skrypt jest wywoływany bezpośrednio
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000) 

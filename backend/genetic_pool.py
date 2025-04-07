@@ -599,7 +599,7 @@ def process_round_result(
             pos_item.successes += 1
         
         if neg_item:
-            pos_item.successes += 1  # Neg też ma sukces, bo przetrwał
+            neg_item.successes += 1  # Neg też ma sukces, bo przetrwał
         
         # Zaktualizuj liczniki w bazie
         if pos_image:

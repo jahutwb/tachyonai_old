@@ -19,18 +19,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-// Rozpoczęcie gry
+// Funkcja do rozpoczęcia gry
 async function startGame() {
-    // Sprawdź, czy użytkownik jest zalogowany
-    if (!isLoggedIn()) {
-        alert('Musisz się zalogować, aby rozpocząć grę.');
-        document.getElementById('login-modal').style.display = 'block';
-        return;
-    }
-
     // Debugowanie: sprawdź token przed wysłaniem żądania
     const token = getToken();
     console.log('Token przed utworzeniem sesji:', token ? 'token istnieje' : 'brak tokenu');
+    
+    // Sprawdź ważność tokenu przed rozpoczęciem
+    if (!await verifyToken()) {
+        console.log('Token jest nieważny lub wygasł - przekierowuję do logowania');
+        await refreshToken();
+        return;
+    }
     
     // Pokaż overlay ładowania
     showLoadingOverlay('Tworzenie nowej sesji...');

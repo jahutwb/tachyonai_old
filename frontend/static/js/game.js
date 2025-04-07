@@ -315,71 +315,75 @@ async function createNewSession() {
 
 // Obsługa rund
 async function loadNextRound() {
-    showLoadingOverlay('Przygotowanie rundy...');
-    
     try {
         logAppState('Przed załadowaniem nowej rundy');
         
         const response = await fetchWithAuth(`/api/rounds/next?session_id=${GameState.sessionId}`);
-        
         if (!response.ok) {
-            throw new Error('Nie można załadować następnej rundy');
+            throw new Error(`Błąd pobierania następnej rundy: ${response.status} ${response.statusText}`);
         }
         
         const roundData = await response.json();
-        GameState.currentRound = roundData;
+        console.log('Odpowiedź serwera:', roundData);
         
-        // Przypisanie akcji do kurtyn na podstawie danych z serwera
+        // Aktualizuj stan gry o nową rundę
+        GameState.currentRound = roundData;
         GameState.leftAction = roundData.left_action;
         GameState.rightAction = roundData.right_action;
+        GameState.startPrice = roundData.start_price;
+        GameState.endPrice = 0;  // Resetujemy tylko endPrice
+        GameState.isWaitingForPriceChange = false;  // Resetujemy flagę czekania
+        
+        // Zaloguj stan aplikacji
+        logAppState('Po załadowaniu nowej rundy');
+        
+        // Pokaż fazę wyboru
+        showSelectPhase();
+        
+        // Aktualizuj widok statystyk
+        updateStatsView();
         
         console.log(`Lewa kurtyna: ${GameState.leftAction}, Prawa kurtyna: ${GameState.rightAction}`);
         
-        // Przejście do fazy wyboru
-        showSelectPhase();
-        
-        logAppState('Po załadowaniu nowej rundy');
-        hideLoadingOverlay();
     } catch (error) {
-        console.error('Błąd ładowania rundy:', error);
-        alert(`Błąd: ${error.message}`);
+        console.error('Błąd podczas ładowania następnej rundy:', error);
         hideLoadingOverlay();
     }
 }
 
 // Inicjalizacja i przetwarzanie wyboru kurtyny
 async function selectCurtain(side) {
-    console.log(`Wybrano kurtynę: ${side}`);
     if (GameState.isWaitingForPriceChange) {
         console.warn('Już oczekujemy na zmianę ceny, ignoruję kliknięcie');
         return;
     }
-    
-    // Rozwiń wybraną kurtynę i ukryj drugą
-    const leftCurtain = document.getElementById('left-curtain');
-    const rightCurtain = document.getElementById('right-curtain');
-    
-    if (side === 'LEFT') {
-        leftCurtain.classList.add('curtain-expanded');
-        rightCurtain.classList.add('curtain-hidden');
-    } else {
-        rightCurtain.classList.add('curtain-expanded');
-        leftCurtain.classList.add('curtain-hidden');
-    }
-    
-    // Używamy ceny zapisanej w GameState.currentRound
-    GameState.startPrice = GameState.currentRound.start_price;
-    GameState.isWaitingForPriceChange = true;
-    
-    console.log(`Cena początkowa: ${GameState.startPrice}`);
-    
+
     try {
+        console.log(`Wybrano kurtynę: ${side}`);
+        
+        // Rozszerz wybraną kurtynę i ukryj drugą
+        const leftCurtain = document.getElementById('left-curtain');
+        const rightCurtain = document.getElementById('right-curtain');
+        
+        if (side === 'LEFT') {
+            leftCurtain.classList.add('curtain-expanded');
+            rightCurtain.classList.add('curtain-hidden');
+        } else {
+            rightCurtain.classList.add('curtain-expanded');
+            leftCurtain.classList.add('curtain-hidden');
+        }
+        
+        // Pobierz cenę początkową
+        const startPrice = await getCurrentPrice();
+        console.log(`Cena początkowa: ${startPrice}`);
+        
+        // Aktualizuj stan gry
+        GameState.startPrice = startPrice;
+        GameState.isWaitingForPriceChange = true;  // Ustawiamy flagę czekania na true
+        
         // Wyślij wybór do serwera
-        const response = await fetchWithAuth(`/api/rounds/choice`, {
+        const response = await fetchWithAuth('/api/rounds/choice', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
             body: JSON.stringify({
                 round_id: GameState.currentRound.id,
                 session_id: GameState.sessionId,
@@ -388,67 +392,37 @@ async function selectCurtain(side) {
         });
         
         if (!response.ok) {
-            throw new Error(`Błąd przy wysyłaniu wyboru: ${response.status} ${response.statusText}`);
+            throw new Error(`Błąd wysyłania wyboru: ${response.status} ${response.statusText}`);
         }
         
-        // Przetwórz odpowiedź od serwera
         const result = await response.json();
         console.log('Odpowiedź z serwera po wyborze:', result);
         
-        // TUTAJ AKTUALIZUJEMY WAŻNE POLA Z ODPOWIEDZI SERWERA
-        // Zapisz ważne wartości z odpowiedzi serwera
+        // Aktualizuj stan gry
         GameState.endPrice = result.end_price;
-        GameState.profit_fraction = result.profit_fraction;
+        GameState.isWaitingForPriceChange = false;  // Ustawiamy flagę czekania na false po otrzymaniu wyniku
+        GameState.sessionProfitFactor = result.session_profit_factor;
+        GameState.remainingPairs = result.remaining_pairs;
         
-        // Zachowaj informacje o akcjach z aktualnej rundy
-        const leftAction = GameState.leftAction;
-        const rightAction = GameState.rightAction;
-        
-        // Aktualizacja statystyk sesji
         if (result.result === 'SUCCESS') {
             GameState.successes++;
-            GameState.sessionProfitFactor *= (1 + result.profit_fraction);
         } else {
             GameState.failures++;
-            GameState.sessionProfitFactor *= (1 + result.profit_fraction);
-            // W przypadku porażki zmniejszamy liczbę pozostałych par
-            GameState.remainingPairs--;
         }
         
-        // Przywróć informacje o akcjach, żeby były widoczne w logowaniu
-        GameState.leftAction = leftAction;
-        GameState.rightAction = rightAction;
-        
-        // Aktualizacja widoku statystyk
-        updateStatsView();
-        
-        // Wyświetl wynik - korzystamy z URL stimulus_url z odpowiedzi serwera
-        let stimulusUrl = result.stimulus_url;
-        if (!stimulusUrl) {
-            if (result.result === 'SUCCESS') {
-                // Zapasowy URL w przypadku braku stimulus_url w odpowiedzi
-                stimulusUrl = `/api/images/${GameState.currentRound.pos_image_id}/thumbnail`;
-            } else {
-                // Zapasowy URL w przypadku braku stimulus_url w odpowiedzi
-                stimulusUrl = `/api/images/${GameState.currentRound.neg_image_id}/thumbnail`;
-            }
-        }
-        
-        // Aktualizacja logu stanu
+        // Zaloguj stan aplikacji
         logAppState(`Po rundzie - wynik: ${result.result}`);
         
-        // Poczekaj chwilę i pokaż wynik
-        setTimeout(() => {
-            showResultPhase(result.result, stimulusUrl);
-            GameState.isWaitingForPriceChange = false;
-            hideLoadingOverlay();
-        }, 1000);
+        // Pokaż fazę wyniku bez opóźnienia
+        await showResultPhase(result.result, result.stimulus_url);
+        
+        // Aktualizuj widok statystyk
+        updateStatsView();
         
     } catch (error) {
         console.error('Błąd podczas przetwarzania wyboru:', error);
-        GameState.isWaitingForPriceChange = false;
+        GameState.isWaitingForPriceChange = false;  // Reset flagi czekania w przypadku błędu
         hideLoadingOverlay();
-        alert(`Wystąpił błąd podczas przetwarzania wyboru: ${error.message}`);
     }
 }
 

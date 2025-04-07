@@ -160,6 +160,53 @@ def get_session_summary(
         pos_stimuli = session.pos_pool_json if session.pos_pool_json else []
         neg_stimuli = session.neg_pool_json if session.neg_pool_json else []
         
+        # Pobierz wszystkie rundy dla sesji, aby obliczyć cumulative_factor dla każdego bodźca
+        rounds = db.query(Round).filter(Round.session_id == session_id).all()
+        
+        # Słowniki do przechowywania cumulative_factor dla każdego bodźca
+        pos_cumulative_factors = {}
+        neg_cumulative_factors = {}
+        
+        # Słowniki do przechowywania liczby sukcesów i porażek dla każdego bodźca
+        pos_success_counts = {}
+        pos_failure_counts = {}
+        neg_success_counts = {}
+        neg_failure_counts = {}
+        
+        # Inicjalizuj cumulative_factor=1.0 dla wszystkich bodźców w puli
+        for item in pos_stimuli:
+            if "id" in item:
+                pos_cumulative_factors[item["id"]] = 1.0
+                pos_success_counts[item["id"]] = 0
+                pos_failure_counts[item["id"]] = 0
+                
+        for item in neg_stimuli:
+            if "id" in item:
+                neg_cumulative_factors[item["id"]] = 1.0
+                neg_success_counts[item["id"]] = 0
+                neg_failure_counts[item["id"]] = 0
+                
+        # Oblicz cumulative_factor i zlicz sukcesy/porażki dla każdego bodźca na podstawie rund
+        for round_obj in rounds:
+            if round_obj.result == "SUCCESS":
+                # Dla bodźca pozytywnego (wyświetlonego w przypadku sukcesu)
+                if round_obj.pos_image_id in pos_cumulative_factors:
+                    pos_cumulative_factors[round_obj.pos_image_id] *= (1 + round_obj.profit_fraction)
+                    pos_success_counts[round_obj.pos_image_id] = pos_success_counts.get(round_obj.pos_image_id, 0) + 1
+                
+                # Dla bodźca negatywnego (przetrwanie - nie wyświetlony w przypadku sukcesu)
+                if round_obj.neg_image_id in neg_cumulative_factors:
+                    neg_cumulative_factors[round_obj.neg_image_id] *= (1 + round_obj.profit_fraction)
+                    neg_success_counts[round_obj.neg_image_id] = neg_success_counts.get(round_obj.neg_image_id, 0) + 1
+            elif round_obj.result == "FAILURE":
+                # Dla bodźca pozytywnego (nie wyświetlony w przypadku porażki)
+                if round_obj.pos_image_id in pos_failure_counts:
+                    pos_failure_counts[round_obj.pos_image_id] = pos_failure_counts.get(round_obj.pos_image_id, 0) + 1
+                
+                # Dla bodźca negatywnego (wyświetlony w przypadku porażki)
+                if round_obj.neg_image_id in neg_failure_counts:
+                    neg_failure_counts[round_obj.neg_image_id] = neg_failure_counts.get(round_obj.neg_image_id, 0) + 1
+        
         # Jeśli mamy dane w pos_pool_json, przygotuj ranking obrazów pozytywnych
         if session.pos_pool_json:
             logger.info(f"Przygotowuję ranking obrazów pozytywnych, liczba obrazów w puli: {len(session.pos_pool_json)}")
@@ -173,31 +220,35 @@ def get_session_summary(
                     pos_images = db.query(Image).filter(Image.id.in_(pos_ids)).all()
                     logger.info(f"Znaleziono {len(pos_images)} obrazów pozytywnych w bazie danych")
                     
-                    # Utwórz słownik mapujący ID obrazu na jego dane z puli
-                    pos_embeddings_dict = {img.id: img.embedding for img in pos_images}
+                    # Mapowanie id->item z puli
                     pos_pool_dict = {item["id"]: item for item in session.pos_pool_json if "id" in item}
                     
                     # Tworzenie rankingu obrazów pozytywnych
                     for img in pos_images:
                         pool_data = pos_pool_dict.get(img.id, {})
-                        successes = pool_data.get("successes", 0)
                         
-                        logger.info(f"Obraz pozytywny id={img.id}: successes={successes}, total_successes={img.total_successes}, total_failures={img.total_failures}, total_profit_factor={img.total_profit_factor:.6f}")
+                        # Użyj obliczonych wartości sukcesów i porażek z rund
+                        successes = pos_success_counts.get(img.id, 0)
+                        failures = pos_failure_counts.get(img.id, 0)
                         
-                        # Dodaj tylko obrazy, które miały conajmniej jeden sukces
-                        if successes > 0:
-                            pos_ranking.append({
-                                "id": img.id,
-                                "total_successes": img.total_successes,
-                                "total_failures": img.total_failures,
-                                "total_profit_factor": img.total_profit_factor,
-                                "origin": pool_data.get("origin", "random"),
-                                "parent": pool_data.get("parent") if pool_data.get("origin") == "child" else None
-                            })
-                            logger.info(f"Dodano obraz id={img.id} do rankingu pozytywnego")
+                        # Użyj obliczonego cumulative_factor lub 1.0 jeśli brak
+                        cumulative_factor = pos_cumulative_factors.get(img.id, 1.0)
+                        
+                        logger.info(f"Obraz pozytywny id={img.id}: successes={successes}, failures={failures}, cumulative_factor={cumulative_factor:.6f}")
+                        
+                        # Dodaj obrazy do rankingu
+                        pos_ranking.append({
+                            "id": img.id,
+                            "successes": successes,
+                            "failures": failures,
+                            "cumulative_factor": cumulative_factor,
+                            "origin": pool_data.get("origin", "random"),
+                            "parent": pool_data.get("parent") if pool_data.get("origin") == "child" else None
+                        })
+                        logger.info(f"Dodano obraz id={img.id} do rankingu pozytywnego")
                 
-                # Sortuj ranking według liczby sukcesów (malejąco)
-                pos_ranking = sorted(pos_ranking, key=lambda x: x["total_successes"], reverse=True)
+                # Sortuj ranking według liczby sukcesów z puli (malejąco)
+                pos_ranking = sorted(pos_ranking, key=lambda x: x["successes"], reverse=True)
                 logger.info(f"Ranking obrazów pozytywnych gotowy, liczba obrazów: {len(pos_ranking)}")
             except Exception as e:
                 logger.error(f"Błąd podczas przygotowywania rankingu pozytywnego: {str(e)}")
@@ -216,31 +267,35 @@ def get_session_summary(
                     neg_images = db.query(Image).filter(Image.id.in_(neg_ids)).all()
                     logger.info(f"Znaleziono {len(neg_images)} obrazów negatywnych w bazie danych")
                     
-                    # Utwórz słownik mapujący ID obrazu na jego dane z puli
-                    neg_embeddings_dict = {img.id: img.embedding for img in neg_images}
+                    # Mapowanie id->item z puli
                     neg_pool_dict = {item["id"]: item for item in session.neg_pool_json if "id" in item}
                     
                     # Tworzenie rankingu obrazów negatywnych
                     for img in neg_images:
                         pool_data = neg_pool_dict.get(img.id, {})
-                        successes = pool_data.get("successes", 0)
                         
-                        logger.info(f"Obraz negatywny id={img.id}: successes={successes}, total_successes={img.total_successes}, total_failures={img.total_failures}, total_profit_factor={img.total_profit_factor:.6f}")
+                        # Użyj obliczonych wartości sukcesów i porażek z rund
+                        successes = neg_success_counts.get(img.id, 0)
+                        failures = neg_failure_counts.get(img.id, 0)
                         
-                        # Dodaj tylko obrazy, które miały conajmniej jeden sukces (przetrwanie)
-                        if successes > 0:
-                            neg_ranking.append({
-                                "id": img.id,
-                                "total_successes": img.total_successes,
-                                "total_failures": img.total_failures,
-                                "total_profit_factor": img.total_profit_factor,
-                                "origin": pool_data.get("origin", "random"),
-                                "parent": pool_data.get("parent") if pool_data.get("origin") == "child" else None
-                            })
-                            logger.info(f"Dodano obraz id={img.id} do rankingu negatywnego")
+                        # Użyj obliczonego cumulative_factor lub 1.0 jeśli brak
+                        cumulative_factor = neg_cumulative_factors.get(img.id, 1.0)
+                        
+                        logger.info(f"Obraz negatywny id={img.id}: successes={successes}, failures={failures}, cumulative_factor={cumulative_factor:.6f}")
+                        
+                        # Dodaj obrazy do rankingu
+                        neg_ranking.append({
+                            "id": img.id,
+                            "successes": successes,
+                            "failures": failures,
+                            "cumulative_factor": cumulative_factor,
+                            "origin": pool_data.get("origin", "random"),
+                            "parent": pool_data.get("parent") if pool_data.get("origin") == "child" else None
+                        })
+                        logger.info(f"Dodano obraz id={img.id} do rankingu negatywnego")
                 
-                # Sortuj ranking według liczby sukcesów (malejąco)
-                neg_ranking = sorted(neg_ranking, key=lambda x: x["total_successes"], reverse=True)
+                # Sortuj ranking według liczby sukcesów z puli (malejąco)
+                neg_ranking = sorted(neg_ranking, key=lambda x: x["successes"], reverse=True)
                 logger.info(f"Ranking obrazów negatywnych gotowy, liczba obrazów: {len(neg_ranking)}")
             except Exception as e:
                 logger.error(f"Błąd podczas przygotowywania rankingu negatywnego: {str(e)}")
@@ -293,117 +348,71 @@ def get_rounds_for_session(
     return rounds
 
 
-@router.get("/sessions/{session_id}/next-pool-stats", response_model=schemas.PoolStatistics)
+@router.get("/sessions/{session_id}/next-pool-stats", response_model=schemas.NextPoolStats)
 def get_next_pool_stats(
     session_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Zwraca statystyki nowej puli wygenerowanej dla zakończonej sesji.
-    Używane do wyświetlania informacji o utworzonej puli w podsumowaniu sesji.
-    """
+    """Pobiera statystyki puli dla następnej sesji, która może być w trakcie generowania."""
     try:
-        # Sprawdź, czy podana sesja istnieje i należy do bieżącego użytkownika
+        logger.info(f"Pobieranie statystyk puli dla następnej sesji, na podstawie sesji {session_id}")
+        
+        # Sprawdź, czy sesja istnieje i należy do bieżącego użytkownika
         session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
-        if not session:
-            logger.warning(f"Sesja {session_id} nie znaleziona")
-            raise HTTPException(status_code=404, detail="Sesja nie znaleziona")
-        if session.user_id != current_user.id:
-            logger.warning(f"Brak dostępu do sesji {session_id} dla użytkownika {current_user.id}")
-            raise HTTPException(status_code=403, detail="Brak dostępu do tej sesji")
+        if not session or session.user_id != current_user.id:
+            raise HTTPException(status_code=404, detail="Sesja nie znaleziona lub brak dostępu")
             
-        # Sprawdź, czy sesja jest zakończona
-        if session.status != "COMPLETED":
-            logger.warning(f"Sesja {session_id} nie jest zakończona, status: {session.status}")
-            return schemas.PoolStatistics(
-                random_count=0,
-                bought_count=0,
-                child_count=0,
-                total_count=0,
-                is_ready=False,
-                session_id=None
-            )
-            
-        # Sprawdź, czy istnieje już nowa sesja wygenerowana na podstawie tej sesji
+        # Sprawdź, czy istnieje już wygenerowana ale nieużyta sesja dla użytkownika
         next_session = db.query(SessionModel).filter(
             SessionModel.user_id == current_user.id,
-            SessionModel.id > session_id
-        ).order_by(SessionModel.id.asc()).first()
+            SessionModel.status == "PENDING"
+        ).order_by(SessionModel.id.desc()).first()
         
-        if next_session:
-            # Sesja już istnieje, zwróć jej statystyki
-            pos_pool = next_session.pos_pool_json
-            neg_pool = next_session.neg_pool_json
+        # Jeśli nie ma jeszcze wygenerowanej sesji PENDING, generujemy nową w tle
+        if not next_session:
+            # Rozpocznij generowanie w tle (nie czekaj na zakończenie)
+            # W tym przypadku zwracamy informację, że pula nie jest jeszcze gotowa
+            return {
+                "is_ready": False,
+                "session_id": None,
+                "total_count": 0,
+                "random_count": 0,
+                "bought_count": 0,
+                "child_count": 0,
+                "message": "Generowanie puli w toku"
+            }
             
-            # Oblicz statystyki
-            pos_random_count = sum(1 for item in pos_pool if item.get("origin") == "random")
-            pos_bought_count = sum(1 for item in pos_pool if item.get("origin") == "bought")
-            pos_child_count = sum(1 for item in pos_pool if item.get("origin") == "child")
-            
-            neg_random_count = sum(1 for item in neg_pool if item.get("origin") == "random")
-            neg_bought_count = sum(1 for item in neg_pool if item.get("origin") == "bought")
-            neg_child_count = sum(1 for item in neg_pool if item.get("origin") == "child")
-            
-            return schemas.PoolStatistics(
-                random_count=pos_random_count + neg_random_count,
-                bought_count=pos_bought_count + neg_bought_count,
-                child_count=pos_child_count + neg_child_count,
-                total_count=len(pos_pool) + len(neg_pool),
-                is_ready=True,
-                session_id=next_session.id
-            )
-        else:
-            # Nie ma jeszcze nowej sesji, generujemy ją
-            logger.info(f"Generowanie nowej sesji na podstawie sesji {session_id}")
-            
-            # Wygeneruj pulę metodą quasi-genetyczną
-            pos_pool_json, neg_pool_json = generate_pool_with_genetic_algorithm(session, db)
-            
-            # Oblicz statystyki
-            pos_random_count = sum(1 for item in pos_pool_json if item.get("origin") == "random")
-            pos_bought_count = sum(1 for item in pos_pool_json if item.get("origin") == "bought")
-            pos_child_count = sum(1 for item in pos_pool_json if item.get("origin") == "child")
-            
-            neg_random_count = sum(1 for item in neg_pool_json if item.get("origin") == "random")
-            neg_bought_count = sum(1 for item in neg_pool_json if item.get("origin") == "bought")
-            neg_child_count = sum(1 for item in neg_pool_json if item.get("origin") == "child")
-            
-            # Utwórz nową sesję, ale z innym statusem (INACTIVE), aby nie była aktywna od razu
-            new_session = SessionModel(
-                user_id=current_user.id,
-                status="INACTIVE",  # Specjalny status dla nowo utworzonej, ale jeszcze nierozpoczętej sesji
-                pos_pool_json=pos_pool_json,
-                neg_pool_json=neg_pool_json,
-                session_profit_factor=1.0,
-                remaining_pairs=6
-            )
-            
-            db.add(new_session)
-            db.commit()
-            db.refresh(new_session)
-            logger.info(f"Utworzono nową sesję id={new_session.id} dla użytkownika {current_user.id} na podstawie sesji {session_id}")
-            
-            return schemas.PoolStatistics(
-                random_count=pos_random_count + neg_random_count,
-                bought_count=pos_bought_count + neg_bought_count,
-                child_count=pos_child_count + neg_child_count,
-                total_count=len(pos_pool_json) + len(neg_pool_json),
-                is_ready=True,
-                session_id=new_session.id
-            )
-            
+        # Jeśli sesja istnieje, przygotuj statystyki
+        pos_pool = next_session.pos_pool_json or []
+        neg_pool = next_session.neg_pool_json or []
+        
+        # Zlicz bodźce według pochodzenia
+        origins = {"random": 0, "bought": 0, "child": 0}
+        
+        for item in pos_pool + neg_pool:
+            origin = item.get("origin", "unknown")
+            if origin in origins:
+                origins[origin] += 1
+                
+        total_count = len(pos_pool) + len(neg_pool)
+                
+        return {
+            "is_ready": True,
+            "session_id": next_session.id,
+            "total_count": total_count,
+            "random_count": origins["random"],
+            "bought_count": origins["bought"],
+            "child_count": origins["child"],
+            "message": "Pula gotowa do użycia"
+        }
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Błąd podczas pobierania statystyk nowej puli: {str(e)}")
+        logger.error(f"Błąd podczas pobierania statystyk puli: {str(e)}")
         logger.error(traceback.format_exc())
-        return schemas.PoolStatistics(
-            random_count=0,
-            bought_count=0,
-            child_count=0,
-            total_count=0,
-            is_ready=False,
-            session_id=None
-        )
+        raise HTTPException(status_code=500, detail=f"Błąd serwera: {str(e)}")
 
 
 def calculate_centroid(embeddings: List[List[float]], weights: List[float] = None) -> List[float]:
@@ -478,29 +487,43 @@ def generate_pool_with_genetic_algorithm(previous_session: SessionModel, db: Ses
     """
     try:
         num_pairs = 6  # Liczba par obrazów w puli
-        logger.info(f"Rozpoczęcie generowania puli metodą quasi-genetyczną dla sesji {previous_session.id}")
+        logger.info(f"===== ROZPOCZĘCIE GENEROWANIA PULI QUASI-GENETYCZNEJ =====")
+        logger.info(f"Przetwarzam sesję id={previous_session.id}, status={previous_session.status}")
         
         # 1. Pobranie danych z poprzedniej sesji
         pos_pool_prev = previous_session.pos_pool_json
         neg_pool_prev = previous_session.neg_pool_json
         
         if not pos_pool_prev or not neg_pool_prev:
-            logger.warning(f"Brak danych w puli poprzedniej sesji {previous_session.id}, generowanie losowej puli")
-            # Fallback - wygeneruj losową pulę
+            logger.warning(f"[BŁĄD GENETYCZNY] Brak danych w puli poprzedniej sesji {previous_session.id}")
+            logger.warning(f"Pos pool: {pos_pool_prev}")
+            logger.warning(f"Neg pool: {neg_pool_prev}")
+            logger.warning(f"Fallback do losowej puli")
             return generate_random_pool(db, num_pairs)
             
         # 2. Pobierz embeddingi obrazów
         pos_ids = [item["id"] for item in pos_pool_prev if "id" in item]
         neg_ids = [item["id"] for item in neg_pool_prev if "id" in item]
         
+        logger.info(f"Bodźce w poprzedniej sesji: {len(pos_ids)} pozytywnych, {len(neg_ids)} negatywnych")
+        
         pos_images = db.query(Image).filter(Image.id.in_(pos_ids)).all()
         neg_images = db.query(Image).filter(Image.id.in_(neg_ids)).all()
         
+        logger.info(f"Znaleziono obrazy w bazie: {len(pos_images)}/{len(pos_ids)} pozytywnych, {len(neg_images)}/{len(neg_ids)} negatywnych")
+        
         # Sprawdź, czy mamy dostęp do embeddingów
+        missing_embeddings = []
         for img in pos_images + neg_images:
             if not img.embedding:
-                logger.warning(f"Brak embeddingu dla obrazu {img.id}, generowanie losowej puli")
-                return generate_random_pool(db, num_pairs)
+                missing_embeddings.append(img.id)
+                
+        if missing_embeddings:
+            logger.warning(f"[BŁĄD GENETYCZNY] Brak embeddingów dla obrazów: {missing_embeddings}")
+            logger.warning(f"Fallback do losowej puli")
+            return generate_random_pool(db, num_pairs)
+        
+        logger.info(f"Wszystkie embeddingów są dostępne, kontynuuję algorytm genetyczny")
         
         # 3. Przygotowanie danych do obliczeń
         pos_embeddings = [(img.id, img.embedding) for img in pos_images]
@@ -518,22 +541,33 @@ def generate_pool_with_genetic_algorithm(previous_session: SessionModel, db: Ses
         pos_start_centroid = calculate_centroid([embedding for _, embedding in pos_embeddings])
         neg_start_centroid = calculate_centroid([embedding for _, embedding in neg_embeddings])
         
+        logger.info(f"Obliczono centroidy startowe")
+        
         # 4.2 Centroid końcowy - średnia ważona z liczbą sukcesów jako wagami
         pos_weights = [pos_pool_dict.get(img_id, {}).get("successes", 0) for img_id, _ in pos_embeddings]
         neg_weights = [neg_pool_dict.get(img_id, {}).get("successes", 0) for img_id, _ in neg_embeddings]
         
+        logger.info(f"Wagi (sukcesy) dla pozytywnych: {pos_weights}")
+        logger.info(f"Wagi (sukcesy) dla negatywnych: {neg_weights}")
+        
         pos_end_centroid = calculate_centroid([embedding for _, embedding in pos_embeddings], pos_weights)
         neg_end_centroid = calculate_centroid([embedding for _, embedding in neg_embeddings], neg_weights)
+        
+        logger.info(f"Obliczono centroidy końcowe")
         
         # 4.3 Wektor różnicy
         if pos_start_centroid and pos_end_centroid:
             pos_difference_vector = np.array(pos_end_centroid) - np.array(pos_start_centroid)
+            logger.info(f"Obliczono wektor różnicy dla pozytywnych, norma: {np.linalg.norm(pos_difference_vector):.6f}")
         else:
+            logger.warning(f"[BŁĄD GENETYCZNY] Brak centroidów dla pozytywnych, używam wektora zerowego")
             pos_difference_vector = np.zeros(len(pos_embeddings[0][1]) if pos_embeddings else 0)
             
         if neg_start_centroid and neg_end_centroid:
             neg_difference_vector = np.array(neg_end_centroid) - np.array(neg_start_centroid)
+            logger.info(f"Obliczono wektor różnicy dla negatywnych, norma: {np.linalg.norm(neg_difference_vector):.6f}")
         else:
+            logger.warning(f"[BŁĄD GENETYCZNY] Brak centroidów dla negatywnych, używam wektora zerowego")
             neg_difference_vector = np.zeros(len(neg_embeddings[0][1]) if neg_embeddings else 0)
             
         # 5. Ranking bodźców
@@ -553,6 +587,12 @@ def generate_pool_with_genetic_algorithm(previous_session: SessionModel, db: Ses
             reverse=True
         )
         
+        logger.info(f"Utworzono ranking: {len(pos_ranking)} pozytywnych, {len(neg_ranking)} negatywnych")
+        if pos_ranking:
+            logger.info(f"Najlepsze bodźce pozytywne: {pos_ranking[:3]}")
+        if neg_ranking:
+            logger.info(f"Najlepsze bodźce negatywne: {neg_ranking[:3]}")
+        
         # 6. Generowanie nowej puli
         new_pos_pool = []
         new_neg_pool = []
@@ -560,9 +600,11 @@ def generate_pool_with_genetic_algorithm(previous_session: SessionModel, db: Ses
         # 6.1 Pozytywne bodźce
         # Łączna liczba sukcesów
         pos_total_successes = sum(successes for _, successes in pos_ranking)
+        logger.info(f"Łączna liczba sukcesów pozytywnych: {pos_total_successes}")
         
         # Strategia zależna od liczby sukcesów
         if pos_total_successes > num_pairs:
+            logger.info(f"Przypadek A (pos): S > num_pairs, kupuję najlepsze bodźce")
             # Przypadek A: S > num_pairs
             # "Kupujemy" bodźce z rankingu
             points = pos_total_successes - num_pairs
@@ -573,7 +615,9 @@ def generate_pool_with_genetic_algorithm(previous_session: SessionModel, db: Ses
                 points -= successes
                 if points <= 0:
                     break
-                    
+            
+            logger.info(f"Kupiono {len(bought_pos)} bodźców pozytywnych: {bought_pos}")
+            
             # Dodajemy kupione bodźce do nowej puli
             for img_id in bought_pos:
                 new_pos_pool.append({
@@ -658,6 +702,7 @@ def generate_pool_with_genetic_algorithm(previous_session: SessionModel, db: Ses
         
         # Strategia zależna od liczby sukcesów
         if neg_total_successes > num_pairs:
+            logger.info(f"Przypadek A (neg): S > num_pairs, kupuję najlepsze bodźce")
             # Przypadek A: S > num_pairs
             # "Kupujemy" bodźce z rankingu
             points = neg_total_successes - num_pairs
@@ -668,7 +713,9 @@ def generate_pool_with_genetic_algorithm(previous_session: SessionModel, db: Ses
                 points -= successes
                 if points <= 0:
                     break
-                    
+            
+            logger.info(f"Kupiono {len(bought_neg)} bodźców negatywnych: {bought_neg}")
+            
             # Dodajemy kupione bodźce do nowej puli
             for img_id in bought_neg:
                 new_neg_pool.append({
@@ -787,58 +834,81 @@ def generate_pool_with_genetic_algorithm(previous_session: SessionModel, db: Ses
         return generate_random_pool(db, num_pairs)
 
 
-def generate_children(parent_ids: List[int], embeddings_dict: Dict[int, List[float]], 
-                     difference_vector: np.ndarray, num_children: int, 
-                     db: Session, image_type: str, exclude_ids: List[int] = None) -> List[Dict[str, Any]]:
+def generate_children(
+    parent_ids: List[int], 
+    embeddings_dict: Dict[int, List[float]], 
+    difference_vector: np.ndarray, 
+    num_children: int,
+    db: Session,
+    image_type: str,
+    exclude_ids: List[int] = None
+) -> List[Dict[str, Any]]:
     """
     Generuje dzieci na podstawie rodziców i wektora różnicy.
     
     Args:
-        parent_ids: Lista ID obrazów rodziców
-        embeddings_dict: Słownik mapujący ID obrazu na jego embedding
-        difference_vector: Wektor różnicy między centroidami
+        parent_ids: Lista ID obrazów-rodziców
+        embeddings_dict: Słownik mapujący ID na embedding
+        difference_vector: Wektor różnicy (kierunek ewolucji)
         num_children: Liczba dzieci do wygenerowania
         db: Obiekt sesji bazy danych
         image_type: Typ obrazu (POSITIVE/NEGATIVE)
         exclude_ids: Lista ID obrazów do wykluczenia
         
     Returns:
-        Lista słowników reprezentujących dzieci
+        Lista słowników opisujących dzieci
     """
-    if not parent_ids:
-        return []
-        
     if exclude_ids is None:
         exclude_ids = []
         
-    children = []
-    num_parents = len(parent_ids)
+    logger.info(f"Generowanie {num_children} dzieci typu {image_type} z {len(parent_ids)} rodziców")
     
-    # Rozdziel dzieci między rodziców
-    children_per_parent = num_children // num_parents
-    extra_children = num_children % num_parents
+    # Jeśli brak rodziców lub dzieci do wygenerowania, zwróć pustą listę
+    if not parent_ids or num_children <= 0:
+        logger.warning(f"[BŁĄD DZIECI] Brak rodziców ({len(parent_ids)}) lub liczba dzieci <= 0 ({num_children})")
+        return []
     
-    # Pobierz wszystkie embeddingi z bazy danych dla danego typu obrazu
+    # Pobierz wszystkie obrazy danego typu z bazy danych
     all_images = db.query(Image).filter(Image.type == image_type).all()
-    all_embeddings = [(img.id, img.embedding) for img in all_images if img.embedding]
+    all_embeddings = []
+    for img in all_images:
+        if img.embedding:
+            all_embeddings.append((img.id, img.embedding))
+        else:
+            logger.warning(f"[BŁĄD DZIECI] Obraz {img.id} nie ma embeddingu, pomijam")
+            
+    if not all_embeddings:
+        logger.warning(f"[BŁĄD DZIECI] Brak obrazów z embeddingami typu {image_type}")
+        return []
+        
+    logger.info(f"Znaleziono {len(all_embeddings)} potencjalnych kandydatów na dzieci typu {image_type}")
     
+    # Rozdziel dzieci pomiędzy rodziców
+    children_per_parent = num_children // len(parent_ids)
+    extra_children = num_children % len(parent_ids)
+    
+    logger.info(f"Rozdzielam dzieci: {children_per_parent} na rodzica + {extra_children} extra dla najlepszych")
+    
+    children = []
+    
+    # Dla każdego rodzica wygeneruj przydzieloną liczbę dzieci
     for i, parent_id in enumerate(parent_ids):
         # Liczba dzieci dla tego rodzica
-        num_children_for_parent = children_per_parent + (1 if i < extra_children else 0)
+        num_parent_children = children_per_parent
+        if i < extra_children:
+            num_parent_children += 1
+            
+        logger.info(f"Generuję {num_parent_children} dzieci dla rodzica {parent_id}")
         
-        if num_children_for_parent <= 0:
-            continue
-            
-        parent_embedding = embeddings_dict.get(parent_id)
-        if not parent_embedding:
-            continue
-            
-        for _ in range(num_children_for_parent):
-            # Oblicz wektor dziecka: parent_vec + difference_vector
-            parent_vec = np.array(parent_embedding)
+        # Embedding rodzica
+        parent_vec = np.array(embeddings_dict[parent_id])
+        
+        # Wygeneruj dzieci
+        for _ in range(num_parent_children):
+            # Oblicz embedding dziecka
             child_vec = parent_vec + difference_vector
             
-            # Znajdź najbliższy obraz do wektora dziecka
+            # Znajdź najbliższy obraz
             child_id, distance = find_nearest_embedding(
                 child_vec.tolist(), 
                 all_embeddings, 
@@ -846,8 +916,10 @@ def generate_children(parent_ids: List[int], embeddings_dict: Dict[int, List[flo
             )
             
             if child_id is None:
+                logger.warning(f"[BŁĄD DZIECI] Nie znaleziono odpowiedniego dziecka dla rodzica {parent_id}")
                 # Jeśli nie znaleziono odpowiedniego dziecka, spróbuj z modyfikacją wektora
                 for alpha in [1.5, 2.0, 3.0]:
+                    logger.info(f"Próba z modyfikacją alpha={alpha}")
                     # Wydłuż wektor różnicy
                     modified_child_vec = parent_vec + alpha * difference_vector
                     # Dodaj losowy szum
@@ -861,13 +933,18 @@ def generate_children(parent_ids: List[int], embeddings_dict: Dict[int, List[flo
                     )
                     
                     if child_id is not None:
+                        logger.info(f"Znaleziono dziecko {child_id} dla rodzica {parent_id} z alpha={alpha}, odległość={distance:.6f}")
                         break
                         
                 # Jeśli wciąż nie znaleziono, wybierz losowy obraz
                 if child_id is None:
+                    logger.warning(f"[BŁĄD DZIECI] Nie znaleziono dziecka nawet z modyfikacją, próbuję losowo")
                     remaining_ids = set(img_id for img_id, _ in all_embeddings) - set(exclude_ids) - set([item["id"] for item in children]) - set(parent_ids)
                     if remaining_ids:
                         child_id = random.choice(list(remaining_ids))
+                        logger.info(f"Wybrano losowe dziecko {child_id} dla rodzica {parent_id}")
+            else:
+                logger.info(f"Znaleziono dziecko {child_id} dla rodzica {parent_id}, odległość={distance:.6f}")
             
             if child_id is not None:
                 children.append({
@@ -878,6 +955,7 @@ def generate_children(parent_ids: List[int], embeddings_dict: Dict[int, List[flo
                     "parent": parent_id
                 })
                 
+    logger.info(f"Wygenerowano {len(children)} dzieci typu {image_type}")
     return children
 
 
@@ -943,4 +1021,82 @@ def generate_random_pool(db: Session, num_pairs: int) -> Tuple[List[Dict[str, An
             "origin": "random"
         })
         
-    return pos_pool_json, neg_pool_json 
+    return pos_pool_json, neg_pool_json
+
+
+@router.post("/sessions/generate-new-pool")
+def generate_new_pool_for_session(
+    request: schemas.GenerateNewPoolRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Rozpoczyna generowanie nowej puli dla użytkownika na podstawie poprzedniej sesji."""
+    try:
+        logger.info(f"Rozpoczynam generowanie nowej puli dla użytkownika {current_user.id}")
+        
+        # Sprawdzamy, czy istnieje już sesja PENDING dla tego użytkownika
+        existing_pending = db.query(SessionModel).filter(
+            SessionModel.user_id == current_user.id,
+            SessionModel.status == "PENDING"
+        ).first()
+        
+        if existing_pending:
+            logger.info(f"Istnieje już sesja PENDING (id={existing_pending.id}) dla użytkownika {current_user.id}")
+            return {"status": "success", "message": "Sesja PENDING już istnieje"}
+        
+        # Pobieramy poprzednią sesję (jeśli podano jej ID)
+        previous_session = None
+        if request.previous_session_id:
+            previous_session = db.query(SessionModel).filter(
+                SessionModel.id == request.previous_session_id,
+                SessionModel.user_id == current_user.id
+            ).first()
+            
+            if not previous_session:
+                logger.warning(f"Nie znaleziono sesji {request.previous_session_id} dla użytkownika {current_user.id}")
+                raise HTTPException(status_code=404, detail="Poprzednia sesja nie znaleziona")
+        else:
+            # Jeśli nie podano ID, szukamy ostatniej zakończonej sesji
+            previous_session = db.query(SessionModel).filter(
+                SessionModel.user_id == current_user.id,
+                SessionModel.status == "COMPLETED"
+            ).order_by(SessionModel.ended_at.desc()).first()
+        
+        # Jeśli brak poprzedniej sesji, zwracamy błąd
+        if not previous_session:
+            logger.warning(f"Brak poprzedniej sesji dla użytkownika {current_user.id}")
+            raise HTTPException(status_code=404, detail="Brak poprzedniej sesji")
+        
+        # Generujemy nowe pule na podstawie poprzedniej sesji
+        pos_pool_json, neg_pool_json = generate_pool_with_genetic_algorithm(previous_session, db)
+        
+        # Tworzymy nową sesję w stanie PENDING
+        new_session = SessionModel(
+            user_id=current_user.id,
+            status="PENDING",
+            pos_pool_json=pos_pool_json,
+            neg_pool_json=neg_pool_json,
+            session_profit_factor=1.0,
+            remaining_pairs=6,
+            started_at=None  # Zostanie ustawione przy aktywacji
+        )
+        
+        db.add(new_session)
+        db.commit()
+        db.refresh(new_session)
+        
+        logger.info(f"Utworzono nową sesję PENDING (id={new_session.id}) dla użytkownika {current_user.id}")
+        
+        return {
+            "status": "success", 
+            "message": "Nowa pula wygenerowana", 
+            "session_id": new_session.id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Błąd podczas generowania nowej puli: {str(e)}")
+        logger.error(traceback.format_exc())
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Błąd serwera: {str(e)}") 

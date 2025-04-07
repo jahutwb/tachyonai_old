@@ -196,6 +196,16 @@ class ImageEmbedding(BaseModel):
     embedding: List[float]
 
 
+class NextPoolStats(BaseModel):
+    is_ready: bool
+    session_id: Optional[int] = None
+    total_count: int
+    random_count: int
+    bought_count: int
+    child_count: int
+    message: str
+
+
 class Image(BaseModel):
     id: int
     path: str
@@ -223,6 +233,24 @@ class Session(BaseModel):
         from_attributes = True
 
 
+class GenealogyNode(BaseModel):
+    id: int
+    successes: int
+    failures: int
+    profit_factor: float
+    parent: Optional[int] = None
+    origin: str  # "random", "child", "bought"
+
+
+class StimulusRanking(BaseModel):
+    id: int
+    successes: int
+    failures: int
+    cumulative_factor: float
+    origin: str  # "random", "child", "bought"
+    parent: Optional[int] = None
+
+
 class SessionSummary(BaseModel):
     id: int
     status: str
@@ -234,11 +262,21 @@ class SessionSummary(BaseModel):
     round_count: int
     pos_stimuli: Optional[List[Any]] = None
     neg_stimuli: Optional[List[Any]] = None
-    pos_ranking: Optional[List[Any]] = None
-    neg_ranking: Optional[List[Any]] = None
+    pos_ranking: Optional[List[StimulusRanking]] = None
+    neg_ranking: Optional[List[StimulusRanking]] = None
 
     class Config:
         from_attributes = True
+
+
+# Statystyki puli bodźców generowanej przez algorytm quasi-genetyczny
+class PoolStatistics(BaseModel):
+    random_count: int  # Liczba losowych bodźców
+    bought_count: int  # Liczba kupionych bodźców
+    child_count: int   # Liczba dzieci
+    total_count: int   # Łączna liczba bodźców
+    is_ready: bool = True  # Czy pula jest gotowa
+    session_id: Optional[int] = None  # ID nowo utworzonej sesji
 
 
 class RoundChoice(BaseModel):
@@ -259,20 +297,11 @@ class RoundResult(BaseModel):
     stimulus_url: Optional[str] = None
 
 
-class GenealogyNode(BaseModel):
-    id: int
-    successes: int
-    failures: int
-    profit_factor: float
-    parent: Optional[int] = None
-    origin: str  # "random", "child", "bought"
+class GenerateNewPoolRequest(BaseModel):
+    previous_session_id: Optional[int] = None
 
 
-# Statystyki puli bodźców generowanej przez algorytm quasi-genetyczny
-class PoolStatistics(BaseModel):
-    random_count: int  # Liczba losowych bodźców
-    bought_count: int  # Liczba kupionych bodźców
-    child_count: int   # Liczba dzieci
-    total_count: int   # Łączna liczba bodźców
-    is_ready: bool = True  # Czy pula jest gotowa
-    session_id: Optional[int] = None  # ID nowo utworzonej sesji 
+# Modele dla API zewnętrznego
+class UserCredentials(BaseModel):
+    username: str
+    password: str 

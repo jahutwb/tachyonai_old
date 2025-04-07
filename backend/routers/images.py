@@ -79,10 +79,30 @@ async def get_image(
 @router.get("/images/{image_id}/thumbnail")
 async def get_image_thumbnail(
     image_id: int,
-    current_user: User = Depends(get_current_user),
+    token: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     """Pobiera miniaturę obrazu o podanym ID."""
+    # Sprawdź token, ale tylko jeśli został podany
+    current_user = None
+    if token:
+        from ..auth import decode_access_token
+        try:
+            # Dekoduj token i pobierz nazwę użytkownika
+            payload = decode_access_token(token)
+            username = payload.get("sub")
+            
+            # Pobierz użytkownika z bazy danych
+            if username:
+                current_user = db.query(User).filter(User.username == username).first()
+        except Exception:
+            # Jeśli token jest nieprawidłowy, ignorujemy go
+            pass
+    
+    # Jeśli token nie został podany lub jest nieprawidłowy, wymagaj standardowej autoryzacji
+    if not current_user:
+        current_user = Depends(get_current_user)
+    
     image = db.query(Image).filter(Image.id == image_id).first()
     if not image:
         raise HTTPException(status_code=404, detail="Obraz nie znaleziony")

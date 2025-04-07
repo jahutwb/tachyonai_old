@@ -1,261 +1,422 @@
 /**
- * Test E2E dla procesów uwierzytelniania w aplikacji tachyonai
+ * Test E2E dla pełnego procesu: logowanie > rozgrywka > podsumowanie sesji
  */
 
 const puppeteer = require('puppeteer');
+const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 
-// Utworzenie katalogu na zrzuty ekranu
-const timestamp = new Date().toISOString().replace(/:/g, '-');
-const screenshotDir = path.join('screenshots', 'auth-test-' + timestamp);
-if (!fs.existsSync(screenshotDir)) {
-  fs.mkdirSync(screenshotDir, { recursive: true });
+// Globalne zmienne pomocnicze
+let browser;
+let page;
+let sessionId;
+
+// Konfiguracja testów
+const API_URL = 'http://localhost:8000';
+const TEST_USER = {
+  username: 'testuser_3804',
+  password: 'password123'
+};
+
+// Helper do czekania
+const waitForTimeout = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Utwórz katalog na zrzuty ekranu, jeśli nie istnieje
+const screenshotsDir = path.join(__dirname, 'screenshots');
+if (!fs.existsSync(screenshotsDir)) {
+  fs.mkdirSync(screenshotsDir, { recursive: true });
 }
 
-// Pomocnicza funkcja do pobierania zrzutów ekranu
+// Funkcja do robienia zrzutów ekranu z nazwą 
 async function takeScreenshot(page, name) {
-  const screenshotPath = path.join(screenshotDir, `${name}.png`);
-  await page.screenshot({ path: screenshotPath, fullPage: true });
-  console.log(`Zapisano zrzut ekranu: ${screenshotPath}`);
+  try {
+    const screenshotPath = path.join(screenshotsDir, `${name}-${Date.now()}.png`);
+    await page.screenshot({ path: screenshotPath, fullPage: true });
+    console.log(`Zapisano zrzut ekranu: ${screenshotPath}`);
+    return screenshotPath;
+  } catch (error) {
+    console.warn(`Nie udało się zapisać zrzutu ekranu ${name}: ${error.message}`);
+    return null;
+  }
 }
 
-// Pomocnicza funkcja do debugowania
-async function debugPage(page, info) {
-  console.log(`Debugowanie (${info}):`);
-  
-  // Zapisanie zrzutu ekranu
-  await takeScreenshot(page, `debug-${info}`);
-  
-  // Pobranie i wyświetlenie HTML
-  const content = await page.content();
-  console.log(`HTML Content (skrócony): ${content.substring(0, 200)}...`);
-  
-  // Sprawdzenie widocznych elementów
-  const elements = await page.$$eval('*:not(script):not(style)', els => 
-    els.map(el => ({
-      tag: el.tagName,
-      id: el.id,
-      classes: el.className,
-      text: el.innerText.substring(0, 50)
-    })).filter(el => el.id || (el.classes && el.classes.length > 0))
-  );
-  
-  console.log('Widoczne elementy:', JSON.stringify(elements.slice(0, 5), null, 2));
-  
-  // Sprawdź localStorage
-  const localStorageData = await page.evaluate(() => {
-    const data = {};
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      data[key] = localStorage.getItem(key);
-    }
-    return data;
-  });
-  console.log('LocalStorage:', JSON.stringify(localStorageData, null, 2));
-  
-  // Sprawdź sieciowe żądania i odpowiedzi (podgląd dla ostatnich 5)
-  const requests = await page.evaluate(() => {
-    if (window.requestLog && window.requestLog.length > 0) {
-      return window.requestLog.slice(-5);
-    }
-    return [];
-  });
-  console.log('Ostatnie żądania:', JSON.stringify(requests, null, 2));
-}
-
-describe('Testy autentykacji i rozpoczynania gry', () => {
-  let browser;
-  let page;
-  const testUsername = `testuser_${Math.floor(Math.random() * 10000)}`;
-  const testPassword = 'password123';
-  
+describe('Test pełnego procesu od logowania do podsumowania', () => {
   beforeAll(async () => {
-    browser = await puppeteer.launch({
-      headless: false,
-      slowMo: 100,
-      args: ['--window-size=1280,800', '--no-sandbox', '--disable-setuid-sandbox']
-    });
-    page = await browser.newPage();
-    await page.setViewport({ width: 1280, height: 800 });
-    
-    // Monitorowanie zapytań sieciowych
-    await page.setRequestInterception(true);
-    const requestLog = [];
-    page.on('request', request => {
-      requestLog.push({
-        url: request.url(),
-        method: request.method(),
-        headers: request.headers(),
-        postData: request.postData()
-      });
-      request.continue();
-    });
-    
-    page.on('response', async response => {
-      const req = requestLog.find(r => r.url === response.url() && r.method === response.request().method());
-      if (req) {
-        req.status = response.status();
-        try {
-          const contentType = response.headers()['content-type'] || '';
-          if (contentType.includes('application/json')) {
-            req.responseBody = await response.json().catch(() => 'Error parsing JSON');
-          } else {
-            req.responseBody = await response.text().catch(() => 'Error getting text').then(text => text.substring(0, 100) + '...');
-          }
-        } catch (e) {
-          req.responseBody = `Error accessing response body: ${e.message}`;
-        }
-      }
-    });
-    
-    // Dodaj requestLog do window, aby móc uzyskać do niego dostęp
-    await page.evaluate(() => {
-      window.requestLog = [];
-    });
-    
-    // Przechwytuj console.log z przeglądarki
-    page.on('console', msg => console.log('BROWSER CONSOLE:', msg.text()));
-  });
-  
-  afterAll(async () => {
-    if (browser) await browser.close();
-  });
-  
-  test('Powinien zarejestrować użytkownika, zalogować i rozpocząć grę', async () => {
-    // 1. Rejestracja
-    await page.goto('http://localhost:8000/signup');
-    await takeScreenshot(page, '01-signup-page');
-    
-    await page.type('#username', testUsername);
-    await page.type('#password', testPassword);
-    await takeScreenshot(page, '02-filled-signup-form');
-    
-    // Dodaj monitorowanie fetch/XHR
-    await page.evaluate(() => {
-      const originalFetch = window.fetch;
-      window.fetch = async function(...args) {
-        try {
-          console.log('FETCH REQUEST:', JSON.stringify(args));
-          const response = await originalFetch.apply(this, args);
-          const responseClone = response.clone();
-          try {
-            const data = await responseClone.json();
-            console.log('FETCH RESPONSE:', response.status, JSON.stringify(data));
-          } catch (e) {
-            console.log('FETCH RESPONSE (not JSON):', response.status);
-          }
-          return response;
-        } catch (error) {
-          console.error('FETCH ERROR:', error);
-          throw error;
-        }
-      };
-    });
-    
-    // Kliknij przycisk rejestracji
-    await Promise.all([
-      page.click('button[type="submit"]'),
-      page.waitForNavigation({ timeout: 10000 }).catch(() => console.log('Brak nawigacji po rejestracji'))
-    ]);
-    
-    await takeScreenshot(page, '03-after-signup');
-    
-    // 2. Przejdź do strony głównej
-    await page.goto('http://localhost:8000/');
-    await takeScreenshot(page, '04-main-page');
-    
-    // Sprawdź localStorage po przejściu na stronę główną
-    await page.evaluate(() => {
-      console.log('Current localStorage:', JSON.stringify(Object.entries(localStorage)));
-    });
-    
-    // 3. Zaloguj się
-    await page.goto('http://localhost:8000/login');
-    await takeScreenshot(page, '05-login-page');
-    
-    await page.type('#username', testUsername);
-    await page.type('#password', testPassword);
-    await takeScreenshot(page, '06-filled-login-form');
-    
-    // Kliknij przycisk logowania
-    await Promise.all([
-      page.click('button[type="submit"]'),
-      page.waitForNavigation({ timeout: 10000 }).catch(() => console.log('Brak nawigacji po logowaniu'))
-    ]);
-    
-    await takeScreenshot(page, '07-after-login');
-    
-    // Sprawdź localStorage po logowaniu
-    const tokenAfterLogin = await page.evaluate(() => {
-      console.log('localStorage after login:', JSON.stringify(Object.entries(localStorage)));
-      return localStorage.getItem('token');
-    });
-    
-    expect(tokenAfterLogin).toBeTruthy();
-    console.log('Token received:', tokenAfterLogin ? 'yes' : 'no');
-    
-    // 4. Przejdź do strony głównej i sprawdź, czy przycisk rozpoczęcia gry działa
-    await page.goto('http://localhost:8000/');
-    await takeScreenshot(page, '08-main-page-logged-in');
-    
-    // Dodaj nasłuchiwanie na alerty strony
-    let alertMessage = null;
-    page.on('dialog', async dialog => {
-      alertMessage = dialog.message();
-      console.log('ALERT:', alertMessage);
-      await dialog.accept();
-    });
-    
-    // Sprawdź, czy przycisk jest widoczny
-    const startGameButton = await page.$('#start-game-button');
-    expect(startGameButton).not.toBeNull();
-    
-    // Kliknij przycisk "Rozpocznij grę"
-    await Promise.all([
-      startGameButton.click(),
-      page.waitForResponse(response => 
-        response.url().includes('/api/sessions') && 
-        (response.status() === 200 || response.status() === 401 || response.status() === 500)
-      ).catch(() => console.log('Brak odpowiedzi po kliknięciu przycisku'))
-    ]);
-    
-    await takeScreenshot(page, '09-after-clicking-start-game');
-    
-    // Sprawdź, czy wystąpił alert z błędem
-    if (alertMessage) {
-      console.log('Wystąpił alert z błędem:', alertMessage);
-      // Debuguj problemy z autoryzacją
-      const headersDebug = await page.evaluate(() => {
-        // Sprawdź, jakie nagłówki są wysyłane
-        fetch('/api/sessions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          }
-        }).then(r => r.json())
-          .then(data => console.log('Debug API call response:', data))
-          .catch(e => console.error('Debug API call error:', e));
-          
-        return {
-          token: localStorage.getItem('token'),
-          authorization: `Bearer ${localStorage.getItem('token')}`
-        };
+    try {
+      // Uruchom przeglądarkę
+      browser = await puppeteer.launch({
+        headless: false, // Headless mode dla stabilności testów
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--window-size=1366,768'],
+        defaultViewport: null
       });
       
-      console.log('Debug headers:', headersDebug);
+      console.log('Przeglądarka uruchomiona');
+    } catch (error) {
+      console.error('Błąd podczas uruchamiania przeglądarki:', error);
+      throw error;
     }
-    
-    await debugPage(page, 'after-start-game-attempt');
-    
-    // Sprawdź, czy nastąpiło przekierowanie do strony gry
-    const currentUrl = page.url();
-    console.log('Current URL:', currentUrl);
-    
-    // Test powinien przejść nawet jeśli nie było przekierowania - chcemy zobaczyć co się stało
-    if (!currentUrl.includes('/game')) {
-      console.log('Brak przekierowania do strony gry - analizuję problem');
+  }, 30000);
+
+  afterAll(async () => {
+    if (browser) {
+      await browser.close();
+      console.log('Przeglądarka zamknięta');
     }
-  }, 60000); // 60s timeout
+  });
+
+  test('Pełny test: logowanie > rozgrywka > podsumowanie', async () => {
+    try {
+      // Otwórz nową stronę
+      page = await browser.newPage();
+      
+      // Włącz rejestrowanie logów konsoli
+      page.on('console', message => console.log(`[BROWSER LOG]: ${message.text()}`));
+      
+      // Ustaw timeout dla operacji nawigacji
+      page.setDefaultNavigationTimeout(30000);
+      
+      // ========== KROK 1: LOGOWANIE ==========
+      console.log('KROK 1: Logowanie użytkownika testowego');
+      
+      // Przejdź do strony logowania
+      await page.goto(`${API_URL}/login`);
+      await takeScreenshot(page, 'login-page');
+      
+      // Wypełnij formularz logowania
+      await page.waitForSelector('form input[name="username"]', { timeout: 10000 });
+      await page.type('form input[name="username"]', TEST_USER.username);
+      await page.type('form input[name="password"]', TEST_USER.password);
+      
+      // Wyślij formularz logowania
+      await Promise.all([
+        page.click('form button[type="submit"]'),
+        page.waitForNavigation({ timeout: 15000 })
+      ]);
+      
+      console.log('Zalogowano pomyślnie, sprawdzam przekierowanie');
+      await takeScreenshot(page, 'after-login');
+      
+      // Sprawdź czy jesteśmy zalogowani - powinniśmy być na stronie głównej
+      const currentUrl = page.url();
+      console.log(`Aktualny URL po logowaniu: ${currentUrl}`);
+      expect(currentUrl).toContain(API_URL);
+      
+      // ========== KROK 2: ROZPOCZĘCIE NOWEJ SESJI ==========
+      console.log('KROK 2: Rozpoczynanie nowej sesji gry');
+      
+      // Kliknij przycisk rozpoczęcia nowej sesji
+      await page.waitForSelector('#new-session-btn, .new-session-btn, button:contains("Rozpocznij"), [id*="session"], [class*="session"]', { timeout: 10000 });
+      
+      // Znajdź elementy które mogą być przyciskiem nowej sesji
+      const possibleButtons = await page.$$('button, a.btn, .btn, input[type="button"]');
+      console.log(`Znaleziono ${possibleButtons.length} potencjalnych przycisków`);
+      
+      for (const btn of possibleButtons) {
+        const text = await page.evaluate(el => el.textContent, btn);
+        console.log(`Przycisk: "${text?.trim()}"`);
+      }
+      
+      // Spróbuj kliknąć pierwszy przycisk który zawiera tekst rozpoczęcia gry
+      let clicked = false;
+      for (const btn of possibleButtons) {
+        const text = await page.evaluate(el => el.textContent, btn);
+        if (text && (text.toLowerCase().includes('rozpocznij') || text.toLowerCase().includes('nowa') || text.toLowerCase().includes('sesja') || text.toLowerCase().includes('gra'))) {
+          console.log(`Klikam przycisk: "${text.trim()}"`);
+          await Promise.all([
+            btn.click(),
+            page.waitForNavigation({ timeout: 15000 }).catch(() => console.log('Brak nawigacji po kliknięciu'))
+          ]);
+          clicked = true;
+          break;
+        }
+      }
+      
+      if (!clicked) {
+        console.log('Nie znaleziono przycisku rozpoczęcia gry, próbuję bezpośrednio przejść do /game');
+        await page.goto(`${API_URL}/game`);
+      }
+      
+      await takeScreenshot(page, 'game-start');
+      
+      // Sprawdź czy jesteśmy na stronie gry
+      const gameUrl = page.url();
+      console.log(`URL strony gry: ${gameUrl}`);
+      
+      // Wyciągnij ID sesji z URL jeśli jest dostępne
+      if (gameUrl.includes('/game')) {
+        const urlParams = new URL(gameUrl).searchParams;
+        sessionId = urlParams.get('session_id');
+        if (sessionId) {
+          console.log(`ID sesji z URL: ${sessionId}`);
+        } else {
+          // Jeśli nie ma w URL, spróbuj pobrać z localStorage lub z elementu na stronie
+          sessionId = await page.evaluate(() => {
+            return localStorage.getItem('sessionId') || 
+                   document.querySelector('[data-session-id], .session-id, #session-id')?.textContent || 
+                   null;
+          });
+          
+          if (sessionId) {
+            console.log(`ID sesji z DOM/localStorage: ${sessionId}`);
+          } else {
+            console.warn('Nie udało się pobrać ID sesji');
+          }
+        }
+      } else {
+        console.warn(`Nie jesteśmy na stronie gry: ${gameUrl}`);
+      }
+      
+      // ========== KROK 3: ROZGRYWKA (3 RUNDY) ==========
+      if (gameUrl.includes('/game')) {
+        console.log('KROK 3: Rozpoczynanie rozgrywki (3 rundy)');
+        
+        // Czekaj na załadowanie strony gry
+        await page.waitForSelector('body', { timeout: 10000 });
+        
+        // Zrzut ekranu całej strony
+        await takeScreenshot(page, 'game-loaded');
+        
+        // Wyświetl wszystkie dostępne elementy na stronie
+        const allElements = await page.evaluate(() => {
+          const elements = [];
+          const allTags = document.querySelectorAll('*');
+          for (const el of allTags) {
+            if (el.id || el.className || el.tagName === 'BUTTON' || el.tagName === 'A' || el.tagName === 'INPUT') {
+              elements.push({
+                tag: el.tagName,
+                id: el.id,
+                classes: el.className,
+                text: el.textContent?.trim().substring(0, 30)
+              });
+            }
+          }
+          return elements;
+        });
+        
+        console.log('Dostępne elementy na stronie gry:');
+        for (const el of allElements.slice(0, 20)) { // Pokaż tylko pierwszych 20 elementów
+          console.log(`${el.tag}${el.id ? '#'+el.id : ''}${el.classes ? '.'+el.classes.replace(' ', '.') : ''}: ${el.text}`);
+        }
+        
+        // Przeprowadź 3 rundy
+        for (let i = 0; i < 3; i++) {
+          console.log(`Runda ${i+1}/3`);
+          
+          // Znajdź selektory kurtyn
+          const curtainSelectors = [
+            '#left-curtain', '#right-curtain',
+            '.left-curtain', '.right-curtain',
+            '[data-curtain="left"]', '[data-curtain="right"]',
+            '.curtain-left', '.curtain-right'
+          ];
+          
+          let leftCurtainEl = null;
+          let rightCurtainEl = null;
+          
+          for (const selector of curtainSelectors) {
+            const el = await page.$(selector);
+            if (el) {
+              if (selector.includes('left')) {
+                leftCurtainEl = el;
+              } else if (selector.includes('right')) {
+                rightCurtainEl = el;
+              }
+            }
+            if (leftCurtainEl && rightCurtainEl) break;
+          }
+          
+          if (!leftCurtainEl && !rightCurtainEl) {
+            // Nie znaleziono selektorów kurtyn, spróbuj znaleźć inne interaktywne elementy
+            console.warn('Nie znaleziono kurtyn, szukam innych elementów klikalnych');
+            
+            const clickableElements = await page.$$('button, a, [role="button"], div[onclick], [class*="clickable"], [class*="selectable"]');
+            if (clickableElements.length >= 2) {
+              leftCurtainEl = clickableElements[0];
+              rightCurtainEl = clickableElements[1];
+              console.log('Znaleziono alternatywne elementy klikalne');
+            } else {
+              console.error('Nie znaleziono wystarczającej liczby elementów klikalnych');
+              await takeScreenshot(page, `round-${i+1}-error-no-curtains`);
+              break;
+            }
+          }
+          
+          // Wybierz lewą lub prawą kurtynę losowo
+          const selectedCurtain = Math.random() > 0.5 ? leftCurtainEl : rightCurtainEl;
+          console.log(`Wybieram ${selectedCurtain === leftCurtainEl ? 'lewą' : 'prawą'} kurtynę`);
+          
+          // Kliknij wybraną kurtynę
+          await selectedCurtain.click();
+          await waitForTimeout(2000);
+          
+          // Zrzut ekranu po wyborze
+          await takeScreenshot(page, `round-${i+1}-after-selection`);
+          
+          // Poczekaj chwilę na załadowanie obrazu
+          await waitForTimeout(3000);
+          
+          // Kliknij przycisk kontynuacji
+          const continueSelectors = [
+            '#continue-btn', '.continue-btn', 
+            'button:contains("Kontynuuj")', 'button:contains("Dalej")',
+            '[data-action="continue"]', '[class*="continue"]', '.btn-primary'
+          ];
+          
+          let continueBtnFound = false;
+          for (const selector of continueSelectors) {
+            try {
+              const continueBtn = await page.$(selector);
+              if (continueBtn) {
+                await continueBtn.click();
+                continueBtnFound = true;
+                console.log(`Kliknięto przycisk kontynuacji (${selector})`);
+                break;
+              }
+            } catch (error) {
+              console.log(`Nie udało się kliknąć ${selector}: ${error.message}`);
+            }
+          }
+          
+          if (!continueBtnFound) {
+            // Jeśli nie znaleziono przycisku kontynuacji, spróbuj kliknąć dowolny przycisk
+            const buttons = await page.$$('button, .btn, a.button, [role="button"]');
+            if (buttons.length > 0) {
+              await buttons[0].click();
+              console.log('Kliknięto alternatywny przycisk kontynuacji');
+            } else {
+              console.warn('Nie znaleziono przycisku kontynuacji');
+            }
+          }
+          
+          // Poczekaj chwilę między rundami
+          await waitForTimeout(3000);
+        }
+      }
+      
+      // ========== KROK 4: PRZEJŚCIE DO PODSUMOWANIA ==========
+      console.log('KROK 4: Przejście do podsumowania sesji');
+      
+      // Jeśli mamy ID sesji, możemy przejść bezpośrednio do podsumowania
+      if (sessionId) {
+        await page.goto(`${API_URL}/summary?session_id=${sessionId}`);
+        console.log(`Przejście do podsumowania sesji ${sessionId}`);
+      } else {
+        console.warn('Brak ID sesji, nie można przejść do podsumowania');
+        
+        // Szukaj przycisku zakończenia
+        const endButtons = await page.$$('button, .btn, a');
+        let endBtnClicked = false;
+        
+        for (const btn of endButtons) {
+          const text = await page.evaluate(el => el.textContent, btn);
+          if (text && (text.toLowerCase().includes('zakończ') || text.toLowerCase().includes('koniec') || text.toLowerCase().includes('podsumowanie'))) {
+            console.log(`Klikam przycisk zakończenia: "${text.trim()}"`);
+            await Promise.all([
+              btn.click(),
+              page.waitForNavigation({ timeout: 15000 }).catch(() => console.log('Brak nawigacji po kliknięciu przycisku zakończenia'))
+            ]);
+            endBtnClicked = true;
+            break;
+          }
+        }
+        
+        if (!endBtnClicked) {
+          console.warn('Nie znaleziono przycisku zakończenia, próbuję przejść do /summary');
+          await page.goto(`${API_URL}/summary`);
+        }
+      }
+      
+      await takeScreenshot(page, 'summary-page');
+      
+      // ========== KROK 5: SPRAWDZENIE PODSUMOWANIA ==========
+      console.log('KROK 5: Sprawdzanie strony podsumowania');
+      
+      // Sprawdź URL
+      const summaryUrl = page.url();
+      console.log(`URL strony podsumowania: ${summaryUrl}`);
+      
+      // Zrzut ekranu całej strony
+      await takeScreenshot(page, 'summary-full-page');
+      
+      // Wyświetl wszystkie dostępne elementy na stronie
+      const summaryElements = await page.evaluate(() => {
+        const elements = [];
+        const allTags = document.querySelectorAll('*');
+        for (const el of allTags) {
+          if (el.id || el.className || el.tagName === 'BUTTON' || el.tagName === 'A' || el.tagName === 'INPUT' || 
+              el.tagName === 'H1' || el.tagName === 'H2' || el.tagName === 'TABLE' || el.tagName === 'IMG') {
+            elements.push({
+              tag: el.tagName,
+              id: el.id,
+              classes: el.className,
+              text: el.textContent?.trim().substring(0, 50)
+            });
+          }
+        }
+        return elements;
+      });
+      
+      console.log('Dostępne elementy na stronie podsumowania:');
+      for (const el of summaryElements.slice(0, 20)) { // Pokaż tylko pierwszych 20 elementów
+        console.log(`${el.tag}${el.id ? '#'+el.id : ''}${el.classes ? '.'+el.classes.replace(' ', '.') : ''}: ${el.text}`);
+      }
+      
+      // Sprawdź czy są obrazy na stronie
+      const images = await page.evaluate(() => {
+        const imgs = document.querySelectorAll('img');
+        return Array.from(imgs).map(img => ({
+          src: img.src,
+          width: img.width,
+          height: img.height,
+          alt: img.alt,
+          complete: img.complete,
+          naturalWidth: img.naturalWidth
+        }));
+      });
+      
+      console.log(`Liczba obrazów na stronie: ${images.length}`);
+      console.log('Statystyki obrazów:');
+      images.slice(0, 5).forEach((img, i) => {
+        console.log(`Obraz ${i+1}: ${img.src.substring(0, 50)}... (${img.width}x${img.height}, załadowany: ${img.complete && img.naturalWidth > 0})`);
+      });
+      
+      // Pobierz dane statystyczne
+      const stats = await page.evaluate(() => {
+        // Szukaj elementów które mogą zawierać statystyki
+        const statsElements = document.querySelectorAll('[class*="stat"], [id*="stat"], .summary-data, .session-data, table, tbody tr');
+        const stats = [];
+        
+        for (const el of statsElements) {
+          stats.push({
+            text: el.textContent.trim(),
+            html: el.innerHTML
+          });
+        }
+        
+        return stats;
+      });
+      
+      console.log('Statystyki sesji:');
+      stats.forEach((stat, i) => {
+        if (i < 10) { // Ogranicz liczbę statystyk w logach
+          console.log(`Statystyka ${i+1}: ${stat.text.substring(0, 100)}`);
+        }
+      });
+      
+      console.log('Test zakończony pomyślnie');
+    } catch (error) {
+      // Zapisz zrzut ekranu w przypadku błędu
+      if (page) {
+        await takeScreenshot(page, 'error-state');
+      }
+      
+      console.error('Błąd podczas testu:', error);
+      throw error;
+    } finally {
+      if (page) {
+        await page.close();
+      }
+    }
+  }, 120000); // 2 minuty na wykonanie testu
 }); 

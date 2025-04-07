@@ -1,4 +1,4 @@
-module.exports = {
+tmodule.exports = {
   launch: {
     headless: "new",
     slowMo: 50,

@@ -143,6 +143,46 @@ async function register(username, password) {
     }
 }
 
+// Funkcja do testowego wykonania żądania z tokenem, aby sprawdzić jego ważność
+async function verifyToken() {
+    const token = getToken();
+    if (!token) {
+        console.log('Brak tokenu do weryfikacji');
+        return false;
+    }
+
+    try {
+        const response = await fetch('/api/users/me', {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        if (response.ok) {
+            console.log('Token jest ważny');
+            return true;
+        } else {
+            console.log('Token jest nieważny lub wygasł');
+            return false;
+        }
+    } catch (error) {
+        console.error('Błąd podczas weryfikacji tokenu:', error);
+        return false;
+    }
+}
+
+// Funkcja do wymuszenia odświeżenia tokenu
+async function refreshToken() {
+    // Najpierw usuń istniejący token
+    removeToken();
+    removeUsername();
+    
+    // Przekieruj na stronę logowania
+    alert('Twoja sesja wygasła. Zaloguj się ponownie, aby kontynuować.');
+    window.location.href = '/login';
+    return false;
+}
+
 // Wylogowanie
 function logout() {
     removeToken();

@@ -4,6 +4,7 @@ import random
 import logging
 import traceback
 from sqlalchemy.sql import func
+from typing import Dict, List, Optional
 
 from ..database import get_db
 from ..models import User, Session as SessionModel, Round, Image, ImageTypeEnum
@@ -29,6 +30,13 @@ def get_next_round(
         if not session:
             logger.warning(f"Sesja {session_id} nie znaleziona")
             raise HTTPException(status_code=404, detail="Sesja nie znaleziona")
+
+        logger.info(f"Stan sesji {session_id} po pobraniu z bazy:")
+        logger.info(f"Status: {session.status}")
+        logger.info(f"Remaining pairs: {session.remaining_pairs}")
+        logger.info(f"Pos pool: {[(item['id'], item.get('failures', 0), item.get('successes', 0)) for item in session.pos_pool_json]}")
+        logger.info(f"Neg pool: {[(item['id'], item.get('failures', 0), item.get('successes', 0)) for item in session.neg_pool_json]}")
+
         if session.user_id != current_user.id:
             logger.warning(f"Brak dostępu do sesji {session_id} dla użytkownika {current_user.id}")
             raise HTTPException(status_code=403, detail="Brak dostępu do tej sesji")
@@ -48,28 +56,31 @@ def get_next_round(
         round_number = round_count + 1
         logger.info(f"Tworzenie rundy numer {round_number} dla sesji {session_id}")
         
-        # Wybierz obrazy z puli zdefiniowanej w sesji
         try:
-            # Upewnij się, że pule istnieją
-            if not session.pos_pool_json or not session.neg_pool_json:
-                logger.error(f"Brak zdefiniowanych puli obrazów w sesji {session_id}")
-                raise HTTPException(status_code=500, detail="Nieprawidłowa konfiguracja sesji - brak pul obrazów")
+            # Filtruj pule obrazów - tylko failures=0
+            valid_pos_pool = [item for item in session.pos_pool_json if item.get("failures", 0) == 0]
+            valid_neg_pool = [item for item in session.neg_pool_json if item.get("failures", 0) == 0]
+
+            logger.info(f"Stan pul po filtrowaniu (tylko failures=0):")
+            logger.info(f"Pozytywne: {[(item['id'], item.get('failures', 0)) for item in valid_pos_pool]}")
+            logger.info(f"Negatywne: {[(item['id'], item.get('failures', 0)) for item in valid_neg_pool]}")
+
+            # Sprawdź, czy są dostępne pary obrazów
+            if not valid_pos_pool or not valid_neg_pool:
+                logger.warning(f"Brak dostępnych par obrazów w sesji {session_id}")
+                # Zakończ sesję, jeśli nie ma dostępnych par
+                session.status = "COMPLETED"
+                session.remaining_pairs = 0
+                session.ended_at = func.now()
+                db.commit()
+                raise HTTPException(
+                    status_code=400,
+                    detail="Brak dostępnych par obrazów w sesji. Sesja została zakończona."
+                )
                 
-            # Wybierz losowy obraz z puli pozytywnej
-            pos_pool = session.pos_pool_json
-            if not pos_pool:
-                logger.error(f"Pusta pula obrazów pozytywnych w sesji {session_id}")
-                raise HTTPException(status_code=500, detail="Pusta pula obrazów pozytywnych")
-                
-            # Wybierz losowy obraz z puli negatywnej
-            neg_pool = session.neg_pool_json
-            if not neg_pool:
-                logger.error(f"Pusta pula obrazów negatywnych w sesji {session_id}")
-                raise HTTPException(status_code=500, detail="Pusta pula obrazów negatywnych")
-                
-            # Losowo wybierz obrazy z pul
-            pos_item = random.choice(pos_pool)
-            neg_item = random.choice(neg_pool)
+            # Wybierz losowy obraz z przefiltrowanych pul
+            pos_item = random.choice(valid_pos_pool)
+            neg_item = random.choice(valid_neg_pool)
             
             # Pobierz obiekty obrazów z bazy danych
             pos_image = db.query(Image).filter(Image.id == pos_item["id"]).first()
@@ -79,7 +90,7 @@ def get_next_round(
                 logger.error(f"Nie znaleziono obrazów w bazie danych: pos_id={pos_item['id']}, neg_id={neg_item['id']}")
                 raise HTTPException(status_code=500, detail="Nieprawidłowe referencje obrazów w puli")
             
-            logger.info(f"Wybrano obrazy z puli: pos_id={pos_image.id}, neg_id={neg_image.id}")
+            logger.info(f"Wybrano obrazy z puli (failures=0): pos_id={pos_image.id}, neg_id={neg_image.id}")
             
         except HTTPException:
             raise
@@ -110,7 +121,17 @@ def get_next_round(
             db.refresh(new_round)
             logger.info(f"Utworzono nową rundę id={new_round.id} dla sesji {session_id}")
             
-            return new_round
+            return {
+                "id": new_round.id,
+                "session_id": new_round.session_id,
+                "round_number": new_round.round_number,
+                "pos_image_id": new_round.pos_image_id,
+                "neg_image_id": new_round.neg_image_id,
+                "start_price": new_round.start_price,
+                "left_action": new_round.left_action,
+                "right_action": new_round.right_action,
+                "created_at": new_round.created_at
+            }
         except Exception as db_error:
             logger.error(f"Błąd bazy danych podczas tworzenia rundy: {str(db_error)}")
             logger.error(traceback.format_exc())
@@ -134,132 +155,91 @@ def submit_round_choice(
 ):
     """Przetwarza wybór użytkownika w rundzie i zwraca wynik."""
     try:
-        logger.info(f"Przetwarzanie wyboru dla rundy {choice.round_id}, sesji {choice.session_id}, strona: {choice.side}")
+        logger.info(f"Przetwarzanie wyboru dla rundy {choice.round_id}, sesji {choice.session_id}")
         
         # Sprawdź, czy runda istnieje
         round_obj = db.query(Round).filter(Round.id == choice.round_id).first()
         if not round_obj:
-            logger.warning(f"Runda {choice.round_id} nie znaleziona")
             raise HTTPException(status_code=404, detail="Runda nie znaleziona")
         
         # Sprawdź, czy sesja należy do bieżącego użytkownika
         session = db.query(SessionModel).filter(SessionModel.id == round_obj.session_id).first()
         if not session or session.user_id != current_user.id:
-            logger.warning(f"Brak dostępu do rundy {choice.round_id} dla użytkownika {current_user.id}")
             raise HTTPException(status_code=403, detail="Brak dostępu do tej rundy")
         
-        # Określ akcję użytkownika na podstawie strony i przypisanej akcji
-        if choice.side == "LEFT":
-            user_action = round_obj.left_action
-        else:  # RIGHT
-            user_action = round_obj.right_action
-            
-        logger.info(f"Wybrana akcja: {user_action} (strona: {choice.side})")
+        # Określ akcję użytkownika
+        user_action = round_obj.left_action if choice.side == "LEFT" else round_obj.right_action
         
-        start_price = round_obj.start_price
-        logger.debug(f"Cena początkowa: {start_price}")
+        # Symulacja zmiany ceny
+        price_change = random.uniform(-0.01, 0.01)
+        end_price = round_obj.start_price * (1 + price_change)
         
-        # Dla uproszczenia, losowo generujemy zmianę ceny
-        price_change = random.uniform(-0.01, 0.01)  # +/- 1%
-        end_price = start_price * (1 + price_change)
-        logger.info(f"Zmiana ceny: {price_change:.6f}, start_price: {start_price}, end_price: {end_price}")
+        # Przygotuj kopie JSON-ów z puli
+        pos_pool = session.pos_pool_json.copy() if session.pos_pool_json else []
+        neg_pool = session.neg_pool_json.copy() if session.neg_pool_json else []
         
-        # Obliczanie zysku
+        logger.info("Stan pul przed aktualizacją:")
+        logger.info(f"Pozytywna: {[(i['id'], i.get('failures', 0), i.get('successes', 0)) for i in pos_pool]}")
+        logger.info(f"Negatywna: {[(i['id'], i.get('failures', 0), i.get('successes', 0)) for i in neg_pool]}")
+        
+        # Oblicz wynik i zaktualizuj pule
         if (user_action == "BUY" and price_change > 0) or (user_action == "SELL" and price_change < 0):
             result = "SUCCESS"
             profit_fraction = abs(price_change)
-            # Obrazek pozytywny
             stimulus_id = round_obj.pos_image_id
-            logger.info(f"SUKCES! profit_fraction: {profit_fraction:.6f}, wyświetlam pozytywny bodziec (id: {stimulus_id})")
             
-            # Pobierz obiekty obrazów
-            pos_image = db.query(Image).filter(Image.id == round_obj.pos_image_id).first()
-            neg_image = db.query(Image).filter(Image.id == round_obj.neg_image_id).first()
+            # Aktualizuj successes dla obu obrazów w pulach
+            for item in pos_pool:
+                if item["id"] == round_obj.pos_image_id:
+                    item["successes"] = item.get("successes", 0) + 1
+                    logger.info(f"SUCCESS: Zwiększam successes dla pos_image {item['id']}: {item['successes']}")
             
-            if pos_image:
-                logger.info(f"Aktualizuję obraz pozytywny (id: {pos_image.id}): successes: {pos_image.total_successes} -> {pos_image.total_successes + 1}, profit_factor: {pos_image.total_profit_factor:.6f} -> {pos_image.total_profit_factor * (1 + profit_fraction):.6f}")
-                # Aktualizuj liczniki dla obrazu pozytywnego (wyświetlony w przypadku sukcesu)
-                pos_image.total_successes += 1
-                pos_image.total_profit_factor *= (1 + profit_fraction)
-                
-                # Aktualizuj pole pos_pool_json w sesji
-                if session.pos_pool_json:
-                    pos_pool = session.pos_pool_json
-                    for item in pos_pool:
-                        if item["id"] == pos_image.id:
-                            old_successes = item.get("successes", 0)
-                            item["successes"] = old_successes + 1
-                            logger.info(f"Aktualizuję pos_pool_json dla obrazu {pos_image.id}: successes {old_successes} -> {item['successes']}")
-                            break
-                    session.pos_pool_json = pos_pool
-            
-            if neg_image:
-                logger.info(f"Aktualizuję obraz negatywny (przetrwanie) (id: {neg_image.id}): successes: {neg_image.total_successes} -> {neg_image.total_successes + 1}, profit_factor: {neg_image.total_profit_factor:.6f} -> {neg_image.total_profit_factor * (1 + profit_fraction):.6f}")
-                # Negatywny obraz przetrwał rundę (nie został wyświetlony)
-                neg_image.total_successes += 1
-                neg_image.total_profit_factor *= (1 + profit_fraction)
-                
-                # Aktualizuj pole neg_pool_json w sesji
-                if session.neg_pool_json:
-                    neg_pool = session.neg_pool_json
-                    for item in neg_pool:
-                        if item["id"] == neg_image.id:
-                            old_successes = item.get("successes", 0)
-                            item["successes"] = old_successes + 1
-                            logger.info(f"Aktualizuję neg_pool_json dla obrazu {neg_image.id}: successes {old_successes} -> {item['successes']}")
-                            break
-                    session.neg_pool_json = neg_pool
+            for item in neg_pool:
+                if item["id"] == round_obj.neg_image_id:
+                    item["successes"] = item.get("successes", 0) + 1
+                    logger.info(f"SUCCESS: Zwiększam successes dla neg_image {item['id']}: {item['successes']}")
         else:
             result = "FAILURE"
             profit_fraction = -abs(price_change)
-            # Obrazek negatywny
             stimulus_id = round_obj.neg_image_id
-            logger.info(f"PORAŻKA! profit_fraction: {profit_fraction:.6f}, wyświetlam negatywny bodziec (id: {stimulus_id})")
-            # Zmniejsz pozostałe pary tylko w przypadku porażki
-            logger.info(f"Zmniejszam remaining_pairs: {session.remaining_pairs} -> {session.remaining_pairs - 1}")
+            
+            # Aktualizuj failures dla obu obrazów w pulach
+            for item in pos_pool:
+                if item["id"] == round_obj.pos_image_id:
+                    item["failures"] = item.get("failures", 0) + 1
+                    logger.info(f"FAILURE: Zwiększam failures dla pos_image {item['id']}: {item['failures']}")
+            
+            for item in neg_pool:
+                if item["id"] == round_obj.neg_image_id:
+                    item["failures"] = item.get("failures", 0) + 1
+                    logger.info(f"FAILURE: Zwiększam failures dla neg_image {item['id']}: {item['failures']}")
+            
+            # Zmniejsz remaining_pairs
             session.remaining_pairs -= 1
-            
-            # Pobierz obiekty obrazów
-            pos_image = db.query(Image).filter(Image.id == round_obj.pos_image_id).first()
-            neg_image = db.query(Image).filter(Image.id == round_obj.neg_image_id).first()
-            
-            if pos_image:
-                logger.info(f"Aktualizuję obraz pozytywny (porażka) (id: {pos_image.id}): failures: {pos_image.total_failures} -> {pos_image.total_failures + 1}, profit_factor: {pos_image.total_profit_factor:.6f} -> {pos_image.total_profit_factor * (1 + profit_fraction):.6f}")
-                # Aktualizuj liczniki dla obrazu pozytywnego (nie wyświetlony w przypadku porażki)
-                pos_image.total_failures += 1
-                pos_image.total_profit_factor *= (1 + profit_fraction)
-                
-                # Aktualizuj pole pos_pool_json w sesji
-                if session.pos_pool_json:
-                    pos_pool = session.pos_pool_json
-                    for item in pos_pool:
-                        if item["id"] == pos_image.id:
-                            old_failures = item.get("failures", 0)
-                            item["failures"] = old_failures + 1
-                            logger.info(f"Aktualizuję pos_pool_json dla obrazu {pos_image.id}: failures {old_failures} -> {item['failures']}")
-                            break
-                    session.pos_pool_json = pos_pool
-            
-            if neg_image:
-                logger.info(f"Aktualizuję obraz negatywny (wyświetlony) (id: {neg_image.id}): failures: {neg_image.total_failures} -> {neg_image.total_failures + 1}, profit_factor: {neg_image.total_profit_factor:.6f} -> {neg_image.total_profit_factor * (1 + profit_fraction):.6f}")
-                # Aktualizuj liczniki dla obrazu negatywnego (wyświetlony w przypadku porażki)
-                neg_image.total_failures += 1
-                neg_image.total_profit_factor *= (1 + profit_fraction)
-                
-                # Aktualizuj pole neg_pool_json w sesji
-                if session.neg_pool_json:
-                    neg_pool = session.neg_pool_json
-                    for item in neg_pool:
-                        if item["id"] == neg_image.id:
-                            old_failures = item.get("failures", 0)
-                            item["failures"] = old_failures + 1
-                            logger.info(f"Aktualizuję neg_pool_json dla obrazu {neg_image.id}: failures {old_failures} -> {item['failures']}")
-                            break
-                    session.neg_pool_json = neg_pool
-            
-            # W przypadku porażki usuwamy obie pary z puli (nie zmieniamy JSON, tylko flagę remaining_pairs)
         
-        # Aktualizacja rundy
+        logger.info("Stan pul po aktualizacji:")
+        logger.info(f"Pozytywna: {[(i['id'], i.get('failures', 0), i.get('successes', 0)) for i in pos_pool]}")
+        logger.info(f"Negatywna: {[(i['id'], i.get('failures', 0), i.get('successes', 0)) for i in neg_pool]}")
+        
+        # Zapisz zaktualizowane pule z powrotem do sesji
+        session.pos_pool_json = pos_pool
+        session.neg_pool_json = neg_pool
+        
+        # Aktualizuj statystyki obrazów w bazie
+        pos_image = db.query(Image).filter(Image.id == round_obj.pos_image_id).first()
+        neg_image = db.query(Image).filter(Image.id == round_obj.neg_image_id).first()
+        
+        if result == "SUCCESS":
+            pos_image.total_successes += 1
+            neg_image.total_successes += 1
+        else:
+            pos_image.total_failures += 1
+            neg_image.total_failures += 1
+        
+        pos_image.total_profit_factor *= (1 + profit_fraction)
+        neg_image.total_profit_factor *= (1 + profit_fraction)
+        
+        # Aktualizuj rundę
         round_obj.user_choice_side = choice.side
         round_obj.user_action = user_action
         round_obj.end_price = end_price
@@ -267,30 +247,40 @@ def submit_round_choice(
         round_obj.result = result
         round_obj.completed_at = func.now()
         
-        # Aktualizacja sesji
-        old_profit_factor = session.session_profit_factor
+        # Aktualizuj sesję - wymuszamy wykrycie zmian w polach JSON
         session.session_profit_factor *= (1 + profit_fraction)
-        logger.info(f"Aktualizuję session_profit_factor: {old_profit_factor:.6f} -> {session.session_profit_factor:.6f}")
+        
+        # Wymuszamy wykrycie zmian w polach JSON przez SQLAlchemy
+        from sqlalchemy import event
+        from sqlalchemy.orm import attributes
+        
+        # Aktualizujemy pola JSON i wymuszamy oznaczenie jako zmienione
+        session.pos_pool_json = None  # Najpierw ustawiamy na None
+        session.neg_pool_json = None  # Najpierw ustawiamy na None
+        db.flush()  # Wymuszamy flush zmian
+        
+        # Teraz ustawiamy właściwe wartości
+        session.pos_pool_json = pos_pool
+        session.neg_pool_json = neg_pool
+        attributes.flag_modified(session, "pos_pool_json")
+        attributes.flag_modified(session, "neg_pool_json")
         
         if session.remaining_pairs <= 0:
-            logger.info(f"Sesja {session.id} zakończona (remaining_pairs = 0), ustawiam status=COMPLETED")
             session.status = "COMPLETED"
             session.ended_at = func.now()
         
-        # Zapisz wszystkie zmiany do bazy danych
+        # Zapisz wszystkie zmiany w jednej transakcji
         db.commit()
-        db.refresh(round_obj)
-        db.refresh(session)
-        if pos_image:
-            db.refresh(pos_image)
-        if neg_image:
-            db.refresh(neg_image)
         
-        # Zwróć URL obrazka bodźca
+        # Odśwież wszystkie obiekty
+        db.refresh(session)
+        db.refresh(round_obj)
+        db.refresh(pos_image)
+        db.refresh(neg_image)
+        
+        # Pobierz URL obrazka bodźca
         stimulus = db.query(Image).filter(Image.id == stimulus_id).first()
         stimulus_url = f"/api/images/{stimulus_id}/thumbnail" if stimulus else None
-        
-        logger.info(f"Zakończono rundę {round_obj.id} z wynikiem {result}, profit_fraction={profit_fraction:.6f}, stimulus_url={stimulus_url}")
         
         return {
             "round_id": round_obj.id,
@@ -301,8 +291,11 @@ def submit_round_choice(
             "result": round_obj.result,
             "remaining_pairs": session.remaining_pairs,
             "session_profit_factor": session.session_profit_factor,
-            "stimulus_url": stimulus_url
+            "stimulus_url": stimulus_url,
+            "left_action": round_obj.left_action,
+            "right_action": round_obj.right_action
         }
+        
     except HTTPException:
         raise
     except Exception as e:

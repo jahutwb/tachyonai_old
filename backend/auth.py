@@ -14,9 +14,9 @@ from . import models, schemas
 load_dotenv()
 
 # Konfiguracja JWT
-SECRET_KEY = "tajny_klucz_dla_jwt_token"  # W produkcji użyj zmiennych środowiskowych!
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+SECRET_KEY = os.getenv("JWT_SECRET", "tajny_klucz_dla_jwt_token")
+ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+ACCESS_TOKEN_EXPIRE_MINUTES = 1440  # 24 godziny zamiast 30 minut
 
 # Konfiguracja haszowania hasła
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")

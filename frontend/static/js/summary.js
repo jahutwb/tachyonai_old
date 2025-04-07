@@ -11,30 +11,36 @@ let currentSession = null;
 let sessionRounds = [];
 let sessionWealthChart = null;
 
-// Elementy DOM - aktualizacja identyfikatorów zgodnie z HTML
-// ważne - dodanie sprawdzenia w funkcji inicjalizującej czy elementy istnieją
-const sessionSuccessesElement = document.getElementById('session-successes');
-const sessionFailuresElement = document.getElementById('session-failures');
-const sessionDifferenceElement = document.getElementById('session-difference');
-const sessionSuccessRateElement = document.getElementById('session-success-rate');
-const sessionProfitElement = document.getElementById('session-profit');
-const sessionWealthChartContainer = document.getElementById('wealth-chart');
-const posRankingContainer = document.getElementById('positive-stimulus-ranking');
+// Elementy DOM - z bezpiecznym pobieraniem
+const sessionStatsContainer = document.getElementById('session-stats');
+const sessionWealthChartContainer = document.getElementById('session-wealth-chart');
+const posRankingContainer = document.getElementById('pos-ranking');
+const negRankingContainer = document.getElementById('neg-ranking');
 const roundsDetailsContainer = document.getElementById('rounds-details');
-const roundsTable = document.getElementById('rounds-details-body');
+const roundsTable = document.getElementById('rounds-table');
 const loadingOverlay = document.getElementById('loading-overlay');
 const loadingMessage = document.getElementById('loading-message');
-const detailsToggleButton = document.getElementById('show-details-button');
+const detailsToggleButton = document.getElementById('details-toggle-button');
 const newSessionButton = document.getElementById('new-session-button');
 
-// Pomocnicze funkcje
-function showLoadingOverlay(message) {
-    document.getElementById('loading-message').textContent = message;
-    document.getElementById('loading-overlay').style.display = 'flex';
+// Pomocnicze funkcje dla bezpiecznego dostępu do DOM
+function getElement(id) {
+    const element = document.getElementById(id);
+    return element;
 }
 
-function hideLoadingOverlay() {
-    document.getElementById('loading-overlay').style.display = 'none';
+// Pomocnicze funkcje
+function showLoading(message) {
+    const loadingMessage = getElement('loading-message');
+    const loadingOverlay = getElement('loading-overlay');
+    
+    if (loadingMessage) loadingMessage.textContent = message;
+    if (loadingOverlay) loadingOverlay.style.display = 'flex';
+}
+
+function hideLoading() {
+    const loadingOverlay = getElement('loading-overlay');
+    if (loadingOverlay) loadingOverlay.style.display = 'none';
 }
 
 function fetchWithAuth(url, options = {}) {
@@ -347,6 +353,7 @@ function translateOrigin(origin) {
 
 // Sprawdzanie, czy użytkownik jest zalogowany
 document.addEventListener('DOMContentLoaded', async () => {
+    console.log('Inicjalizacja strony podsumowania...');
     const token = localStorage.getItem('token');
     if (!token) {
         window.location.href = '/';
@@ -354,14 +361,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // Aktualizacja nazwy użytkownika w navbar
-    const usernameDisplay = document.getElementById('username-display');
+    const usernameDisplay = getElement('username-display');
     const username = localStorage.getItem('username');
-    if (username && usernameDisplay) {
+    if (usernameDisplay && username) {
         usernameDisplay.textContent = `Witaj, ${username}`;
     }
 
     // Obsługa wylogowania
-    const logoutButton = document.getElementById('logout-button');
+    const logoutButton = getElement('logout-button');
     if (logoutButton) {
         logoutButton.addEventListener('click', () => {
             localStorage.removeItem('token');
@@ -383,143 +390,29 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Inicjalizacja podsumowania
     await loadSessionSummary(sessionId);
 
-    // Pobierz referencje do elementów po załadowaniu strony
-    const detailsToggleButton = document.getElementById('show-details-button');
-    const newSessionButton = document.getElementById('new-session-button');
-
-    // Obsługa przycisków - sprawdź czy istnieją przed dodaniem event listenerów
+    // Obsługa przycisków
+    const detailsToggleButton = getElement('show-details-button');
     if (detailsToggleButton) {
         detailsToggleButton.addEventListener('click', toggleRoundsDetails);
+        console.log('Dodano obsługę przycisku przełączania szczegółów');
     } else {
-        console.error('Element detailsToggleButton nie istnieje');
+        console.warn('Nie znaleziono przycisku przełączania szczegółów');
     }
     
+    const newSessionButton = getElement('new-session-button');
+    console.log('Znaleziony przycisk nowej sesji:', newSessionButton);
     if (newSessionButton) {
         newSessionButton.addEventListener('click', startNewSession);
+        console.log('Dodano obsługę przycisku nowej sesji');
     } else {
-        console.error('Element newSessionButton nie istnieje');
+        console.warn('Nie znaleziono przycisku nowej sesji');
     }
 });
-
-// Funkcja tworząca listę pozytywnych bodźców z danymi z sesji
-function preparePositiveStimuliList(sessionData, rounds) {
-    // Sprawdzamy, czy mamy sensowne dane
-    if (!sessionData || !rounds || rounds.length === 0) {
-        console.log('Brak danych do przygotowania listy bodźców');
-        return [];
-    }
-    
-    console.log('Przygotowywanie listy bodźców z', rounds.length, 'rund');
-    
-    // Przygotuj mapę posID -> informacje o bodźcu
-    const stimuliMap = new Map();
-    
-    // Sortowanie rund według numeru rundy
-    const sortedRounds = [...rounds].sort((a, b) => a.round_number - b.round_number);
-    
-    console.log('Posortowane rundy:', sortedRounds);
-    
-    // Zbieramy wszystkie unikalne ID pozytywnych bodźców z wszystkich rund
-    sortedRounds.forEach(round => {
-        const posId = round.pos_image_id;
-        
-        if (!stimuliMap.has(posId)) {
-            stimuliMap.set(posId, {
-                id: posId,
-                total_successes: 0,
-                total_failures: 0,
-                total_profit_factor: 1.0,
-                rounds_participated: 0,
-                origin: 'unknown',
-                parent: null
-            });
-        }
-    });
-    
-    // Teraz uzupełnij informacje o pochodzeniu z pos_pool_json, jeśli istnieje
-    if (sessionData.pos_pool_json && sessionData.pos_pool_json.length > 0) {
-        try {
-            // Jeśli pos_pool_json jest stringiem, spróbuj go sparsować
-            let poolData = sessionData.pos_pool_json;
-            if (typeof poolData === 'string') {
-                poolData = JSON.parse(poolData);
-            }
-            
-            // Przejdź przez każdy element w puli
-            poolData.forEach(item => {
-                if (stimuliMap.has(item.id)) {
-                    const stimulus = stimuliMap.get(item.id);
-                    stimulus.origin = item.origin || 'unknown';
-                    if (item.parent) {
-                        stimulus.parent = item.parent;
-                    }
-                }
-            });
-            
-            console.log('Dodano informacje o pochodzeniu z pool_json dla', poolData.length, 'bodźców');
-        } catch (error) {
-            console.error('Błąd przy parsowaniu pos_pool_json:', error);
-        }
-    }
-    
-    // Na koniec przejdź przez rundy i zaktualizuj liczniki sukcesów/porażek i współczynniki zysku
-    sortedRounds.forEach(round => {
-        console.log(`Przetwarzanie rundy ${round.round_number}, wynik: ${round.result}, posId: ${round.pos_image_id}, profit_fraction: ${round.profit_fraction}`);
-        
-        const posId = round.pos_image_id;
-        if (stimuliMap.has(posId)) {
-            const stimulus = stimuliMap.get(posId);
-            stimulus.rounds_participated += 1;
-            
-            // WAŻNE: Współczynnik zysku aktualizujemy TYLKO dla rund z sukcesem!
-            if (round.result === 'SUCCESS') {
-                // Inkrementuj licznik sukcesów
-                stimulus.total_successes += 1;
-                
-                // Aktualizacja współczynnika zysku - tylko dla sukcesów!
-                if (round.profit_fraction !== null && !isNaN(round.profit_fraction)) {
-                    stimulus.total_profit_factor *= (1 + round.profit_fraction);
-                    console.log(`Bodziec #${posId}: Sukces w rundzie ${round.round_number}, profit_fraction=${round.profit_fraction}, nowy profit_factor: ${stimulus.total_profit_factor.toFixed(4)}`);
-                } else {
-                    console.warn(`Runda ${round.round_number}: Nieprawidłowa wartość profit_fraction:`, round.profit_fraction);
-                }
-            } else {
-                stimulus.total_failures += 1;
-            }
-        }
-    });
-    
-    // Konwersja mapy na listę
-    const stimuliList = Array.from(stimuliMap.values());
-    
-    // Logowanie wszystkich bodźców przed filtrowaniem
-    console.log('Wszystkie bodźce przed filtrowaniem:', stimuliList);
-    
-    // WAŻNE: Filtrujemy tylko bodźce z przynajmniej jednym sukcesem!
-    const successfulStimuli = stimuliList.filter(stimulus => stimulus.total_successes > 0);
-    
-    // Sortowanie według liczby sukcesów (malejąco)
-    successfulStimuli.sort((a, b) => {
-        // Najpierw porównaj liczbę sukcesów
-        if (b.total_successes !== a.total_successes) {
-            return b.total_successes - a.total_successes;
-        }
-        // W przypadku remisu, porównaj według całkowitego współczynnika zysku
-        return b.total_profit_factor - a.total_profit_factor;
-    });
-    
-    console.log('Przygotowano ranking bodźców (tylko z sukcesami):', successfulStimuli.length);
-    successfulStimuli.forEach(s => {
-        console.log(`Bodziec #${s.id}: ${s.total_successes} sukcesów, profit: ${((s.total_profit_factor - 1) * 100).toFixed(2)}%`);
-    });
-    
-    return successfulStimuli;
-}
 
 // Funkcja ładująca podsumowanie sesji
 async function loadSessionSummary(sessionId) {
     try {
-        showLoadingOverlay('Ładowanie podsumowania sesji...');
+        showLoading('Ładowanie podsumowania sesji...');
         
         // Pobieranie danych sesji
         const sessionResponse = await fetch(`/api/sessions/${sessionId}`, {
@@ -529,12 +422,10 @@ async function loadSessionSummary(sessionId) {
         });
         
         if (!sessionResponse.ok) {
-            console.error(`Błąd pobierania sesji: ${sessionResponse.status} - ${sessionResponse.statusText}`);
             throw new Error('Błąd podczas pobierania danych sesji');
         }
         
         currentSession = await sessionResponse.json();
-        console.log('Pobrano dane sesji:', currentSession);
         
         // Pobieranie rund sesji
         const roundsResponse = await fetch(`/api/sessions/${sessionId}/rounds`, {
@@ -544,530 +435,442 @@ async function loadSessionSummary(sessionId) {
         });
         
         if (!roundsResponse.ok) {
-            console.error(`Błąd pobierania rund: ${roundsResponse.status} - ${roundsResponse.statusText}`);
             throw new Error('Błąd podczas pobierania danych rund');
         }
         
         sessionRounds = await roundsResponse.json();
-        console.log('Pobrano dane rund:', sessionRounds);
         
-        try {
-            // Pobieranie podsumowania sesji
-            const summaryResponse = await fetch(`/api/sessions/${sessionId}/summary`, {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                }
-            });
-            
-            let sessionSummary;
-            
-            if (!summaryResponse.ok) {
-                console.warn(`Błąd pobierania podsumowania sesji: ${summaryResponse.status} - ${summaryResponse.statusText}`);
-                console.warn('Tworzenie zastępczego podsumowania z dostępnych danych');
-                
-                // Tworzymy zastępcze podsumowanie z danych, które udało się pobrać
-                sessionSummary = {
-                    id: currentSession.id,
-                    status: currentSession.status,
-                    started_at: currentSession.started_at,
-                    session_profit_factor: currentSession.session_profit_factor || 1.0,
-                    remaining_pairs: currentSession.remaining_pairs || 0,
-                    success_count: sessionRounds.filter(round => round.result === 'SUCCESS').length,
-                    failure_count: sessionRounds.filter(round => round.result === 'FAILURE').length,
-                    round_count: sessionRounds.length,
-                    pos_stimuli: [],
-                    neg_stimuli: [],
-                    pos_ranking: [],
-                    neg_ranking: []
-                };
-            } else {
-                sessionSummary = await summaryResponse.json();
-                console.log('Pobrano podsumowanie sesji:', sessionSummary);
+        // Pobieranie podsumowania sesji
+        const summaryResponse = await fetch(`/api/sessions/${sessionId}/summary`, {
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
             }
+        });
+        
+        if (!summaryResponse.ok) {
+            console.error('Błąd pobierania podsumowania sesji:', await summaryResponse.text());
             
-            // Renderowanie danych - sprawdzamy czy elementy istnieją przed renderowaniem
-            if (sessionSuccessesElement) {
-                sessionSuccessesElement.textContent = sessionSummary.success_count;
-            } else {
-                console.error('Element sessionSuccessesElement nie istnieje - nie można renderować statystyk sesji');
-            }
-            
-            if (sessionFailuresElement) {
-                sessionFailuresElement.textContent = sessionSummary.failure_count;
-            } else {
-                console.error('Element sessionFailuresElement nie istnieje - nie można renderować statystyk sesji');
-            }
-            
-            if (sessionDifferenceElement) {
-                sessionDifferenceElement.textContent = sessionSummary.success_count - sessionSummary.failure_count;
-            } else {
-                console.error('Element sessionDifferenceElement nie istnieje - nie można renderować statystyk sesji');
-            }
-            
-            if (sessionSuccessRateElement) {
-                const totalRounds = sessionSummary.success_count + sessionSummary.failure_count;
-                const successRate = totalRounds > 0 ? Math.round((sessionSummary.success_count / totalRounds) * 100) : 0;
-                sessionSuccessRateElement.textContent = `${successRate}%`;
-            } else {
-                console.error('Element sessionSuccessRateElement nie istnieje - nie można renderować statystyk sesji');
-            }
-            
-            if (sessionProfitElement) {
-                sessionProfitElement.textContent = `${((sessionSummary.session_profit_factor - 1) * 100).toFixed(2)}%`;
-            } else {
-                console.error('Element sessionProfitElement nie istnieje - nie można renderować statystyk sesji');
-            }
-            
-            if (document.getElementById('wealth-chart')) {
-                renderWealthChart(sessionRounds);
-            } else {
-                console.error('Element wealth-chart nie istnieje - nie można renderować wykresu bogactwa');
-            }
-            
-            // Generowanie listy bodźców i renderowanie rankingu
-            const posRankingElement = document.getElementById('positive-stimulus-ranking');
-            if (posRankingElement) {
-                // Najpierw spróbuj użyć gotowego rankingu z API
-                if (sessionSummary.pos_ranking && sessionSummary.pos_ranking.length > 0) {
-                    renderStimuliRanking(sessionSummary.pos_ranking, 'pos');
-                } else {
-                    // Jeśli brak rankingu, generuj na podstawie danych rund
-                    console.log('Brak gotowego rankingu, generowanie na podstawie rund...');
-                    const posStimuli = preparePositiveStimuliList(currentSession, sessionRounds);
-                    if (posStimuli.length > 0) {
-                        renderStimuliRanking(posStimuli, 'pos');
-                    } else {
-                        console.log('Brak danych rankingowych dla bodźców pozytywnych');
-                        posRankingElement.innerHTML = '<p class="empty-message">Brak danych dla rankingu bodźców pozytywnych</p>';
-                    }
-                }
-            } else {
-                console.error('Element positive-stimulus-ranking nie istnieje w dokumencie');
-            }
-            
-            if (roundsTable) {
-                renderRoundsDetails(sessionRounds);
-            } else {
-                console.error('Element roundsTable nie istnieje - nie można renderować szczegółów rund');
-            }
-            
-        } catch (summaryError) {
-            console.error('Błąd przetwarzania podsumowania:', summaryError);
-            
-            // Renderuj dostępne dane nawet bez podsumowania
-            const fallbackSummary = {
-                id: currentSession.id,
-                status: currentSession.status || 'UNKNOWN',
-                started_at: currentSession.started_at || new Date(),
+            // Kontynuuj bez podsumowania
+            renderSessionStats({
+                success_count: currentSession.success_count || 0,
+                failure_count: currentSession.failure_count || 0,
                 session_profit_factor: currentSession.session_profit_factor || 1.0,
                 remaining_pairs: currentSession.remaining_pairs || 0,
-                success_count: sessionRounds.filter(round => round.result === 'SUCCESS').length,
-                failure_count: sessionRounds.filter(round => round.result === 'FAILURE').length,
-                round_count: sessionRounds.length
-            };
+            });
+            renderWealthChart(sessionRounds);
+            renderRoundsDetails(sessionRounds);
             
-            // Sprawdzamy czy elementy istnieją przed renderowaniem
-            if (sessionSuccessesElement) {
-                sessionSuccessesElement.textContent = fallbackSummary.success_count;
-            }
-            
-            if (sessionFailuresElement) {
-                sessionFailuresElement.textContent = fallbackSummary.failure_count;
-            }
-            
-            if (sessionDifferenceElement) {
-                sessionDifferenceElement.textContent = fallbackSummary.success_count - fallbackSummary.failure_count;
-            }
-            
-            if (sessionSuccessRateElement) {
-                sessionSuccessRateElement.textContent = `${Math.round((fallbackSummary.success_count / (fallbackSummary.success_count + fallbackSummary.failure_count)) * 100)}%`;
-            }
-            
-            if (sessionProfitElement) {
-                sessionProfitElement.textContent = `${((fallbackSummary.session_profit_factor - 1) * 100).toFixed(2)}%`;
-            }
-            
-            if (document.getElementById('wealth-chart')) {
-                renderWealthChart(sessionRounds);
-            }
-            
-            if (roundsTable) {
-                renderRoundsDetails(sessionRounds);
-            }
-            
-            // Próba renderowania pustych rankingów
-            const posRankingElement = document.getElementById('positive-stimulus-ranking');
-            if (posRankingElement) {
-                posRankingElement.innerHTML = '<p>Nie udało się załadować rankingu bodźców pozytywnych</p>';
+            hideLoading();
+            return;
+        }
+        
+        const sessionSummary = await summaryResponse.json();
+        console.log('Podsumowanie sesji:', sessionSummary);
+        
+        // Renderowanie danych
+        renderSessionStats(sessionSummary);
+        renderWealthChart(sessionRounds);
+        
+        // Renderowanie rankingów bodźców
+        if (sessionSummary.pos_ranking && sessionSummary.pos_ranking.length > 0) {
+            renderStimuliRanking(sessionSummary.pos_ranking, 'pos');
+        } else {
+            console.log('Brak danych rankingowych dla bodźców pozytywnych lub pusta lista');
+            const positiveRanking = getElement('positive-stimulus-ranking');
+            if (positiveRanking) {
+                positiveRanking.innerHTML = '<p>Brak danych dla rankingu bodźców pozytywnych</p>';
             }
         }
         
-        hideLoadingOverlay();
+        renderRoundsDetails(sessionRounds);
+        
+        hideLoading();
     } catch (error) {
         console.error('Błąd ładowania podsumowania sesji:', error);
-        hideLoadingOverlay();
-        
-        // Wyświetl bardziej szczegółowy komunikat błędu
-        alert(`Wystąpił błąd podczas ładowania podsumowania sesji: ${error.message}`);
-        
-        // Sprawdź, czy udało się załadować jakieś dane i spróbuj je wyświetlić
-        if (currentSession && sessionRounds) {
-            const fallbackSummary = {
-                id: currentSession.id,
-                status: currentSession.status || 'UNKNOWN',
-                started_at: currentSession.started_at || new Date(),
-                session_profit_factor: currentSession.session_profit_factor || 1.0,
-                remaining_pairs: currentSession.remaining_pairs || 0,
-                success_count: sessionRounds.filter(round => round.result === 'SUCCESS').length,
-                failure_count: sessionRounds.filter(round => round.result === 'FAILURE').length,
-                round_count: sessionRounds.length
-            };
-            
-            // Sprawdzamy czy elementy istnieją przed renderowaniem
-            if (sessionSuccessesElement) {
-                sessionSuccessesElement.textContent = fallbackSummary.success_count;
-            }
-            
-            if (sessionFailuresElement) {
-                sessionFailuresElement.textContent = fallbackSummary.failure_count;
-            }
-            
-            if (sessionDifferenceElement) {
-                sessionDifferenceElement.textContent = fallbackSummary.success_count - fallbackSummary.failure_count;
-            }
-            
-            if (sessionSuccessRateElement) {
-                sessionSuccessRateElement.textContent = `${Math.round((fallbackSummary.success_count / (fallbackSummary.success_count + fallbackSummary.failure_count)) * 100)}%`;
-            }
-            
-            if (sessionProfitElement) {
-                sessionProfitElement.textContent = `${((fallbackSummary.session_profit_factor - 1) * 100).toFixed(2)}%`;
-            }
-            
-            if (document.getElementById('wealth-chart')) {
-                renderWealthChart(sessionRounds);
-            }
-            
-            if (roundsTable) {
-                renderRoundsDetails(sessionRounds);
-            }
-        }
+        hideLoading();
+        alert('Wystąpił błąd podczas ładowania podsumowania sesji. Spróbuj ponownie.');
     }
+}
+
+// Funkcja renderująca statystyki sesji
+function renderSessionStats(summary) {
+    // Bezpieczne pobieranie elementów
+    const sessionSuccesses = getElement('session-successes');
+    const sessionFailures = getElement('session-failures');
+    const sessionDifference = getElement('session-difference');
+    const sessionSuccessRate = getElement('session-success-rate');
+    const sessionProfit = getElement('session-profit');
+    
+    // Sprawdzamy dostępność każdego elementu przed aktualizacją
+    const successCount = summary.success_count || 0;
+    const failureCount = summary.failure_count || 0;
+    
+    if (sessionSuccesses) sessionSuccesses.textContent = successCount;
+    if (sessionFailures) sessionFailures.textContent = failureCount;
+    if (sessionDifference) sessionDifference.textContent = successCount - failureCount;
+    
+    const totalRounds = successCount + failureCount;
+    const successRate = totalRounds > 0 ? Math.round((successCount / totalRounds) * 100) : 0;
+    if (sessionSuccessRate) sessionSuccessRate.textContent = `${successRate}%`;
+    
+    const profit = ((summary.session_profit_factor - 1) * 100).toFixed(2);
+    if (sessionProfit) sessionProfit.textContent = `${profit}%`;
 }
 
 // Funkcja renderująca wykres bogactwa
 function renderWealthChart(rounds) {
-    if (!rounds || rounds.length === 0) {
-        console.log('Brak danych do wyświetlenia wykresu bogactwa');
-        if (document.getElementById('wealth-chart')) {
-            document.getElementById('wealth-chart').parentNode.innerHTML = '<p class="empty-message">Brak danych do wyświetlenia wykresu bogactwa</p>';
-        }
-        return;
-    }
-    
-    console.log('Generowanie wykresu bogactwa z', rounds.length, 'rund');
-    
-    // Sortowanie rund według numeru rundy (bardzo ważne!)
-    const sortedRounds = [...rounds].sort((a, b) => a.round_number - b.round_number);
-    
-    // Debugowanie danych wejściowych
-    console.log('Posortowane rundy do wykresu bogactwa:');
-    sortedRounds.forEach(round => {
-        console.log(`Runda ${round.round_number}: profit_fraction=${round.profit_fraction}, start_price=${round.start_price}, end_price=${round.end_price}, result=${round.result}, user_action=${round.user_action}`);
-    });
-    
-    // Dodatkowe sprawdzenie czy rundy zawierają kompletne dane
-    const incompletedRounds = sortedRounds.filter(r => r.end_price === null || r.end_price === undefined || r.profit_fraction === null || r.profit_fraction === undefined);
-    if (incompletedRounds.length > 0) {
-        console.warn(`Wykryto ${incompletedRounds.length} rund z niekompletnymi danymi. Niektóre rundy mogły zostać przerwane lub nie zostały poprawnie zakończone.`);
-    }
-    
-    // Przygotowanie danych
-    const labels = sortedRounds.map((round) => `Runda ${round.round_number}`);
-    const wealthData = [];
-    const dataPoints = [];
-    let cumulativeWealth = 1.0; // Zaczynamy od 1.0 (100%)
-    
-    // Generowanie punktów wykresu
-    for (const round of sortedRounds) {
-        let profitFraction = 0;
-        
-        // Sprawdzenie, czy profit_fraction jest dostępny
-        if (round.profit_fraction !== null && round.profit_fraction !== undefined && !isNaN(round.profit_fraction)) {
-            profitFraction = round.profit_fraction;
-        } 
-        // Jeśli brak profit_fraction, spróbujmy obliczyć na podstawie start_price i end_price
-        else if (round.start_price && round.end_price && !isNaN(round.start_price) && !isNaN(round.end_price)) {
-            if (round.user_action === 'BUY') {
-                profitFraction = (round.end_price / round.start_price) - 1;
-            } else if (round.user_action === 'SELL') {
-                profitFraction = (round.start_price / round.end_price) - 1;
-            } else {
-                console.warn(`Runda ${round.round_number}: Brak określonej akcji użytkownika (${round.user_action}). Przyjmuję profit_fraction = 0.`);
-                profitFraction = 0;
-            }
-            console.log(`Runda ${round.round_number}: Obliczono profit_fraction = ${profitFraction.toFixed(6)} na podstawie cen.`);
-        } 
-        // Jeśli brak cen lub akcji, przyjmujemy 0
-        else {
-            console.warn(`Runda ${round.round_number}: Brak danych cenowych lub akcji do obliczenia profit_fraction. Przyjmuję 0.`);
-            profitFraction = 0;
-        }
-        
-        // Teraz na pewno mamy wartość liczbową dla profit_fraction
-        cumulativeWealth *= (1 + profitFraction);
-        const percentChange = (cumulativeWealth - 1) * 100; // Konwersja na procenty
-        wealthData.push(percentChange);
-        dataPoints.push({
-            round: round.round_number,
-            profit: profitFraction,
-            cumulative: cumulativeWealth,
-            percent: percentChange
-        });
-    }
-    
-    console.log('Dane wykresu bogactwa:');
-    dataPoints.forEach(point => {
-        console.log(`Runda ${point.round}: Zysk ${(point.profit*100).toFixed(2)}%, Skumulowany ${point.percent.toFixed(2)}%`);
-    });
-    
-    // Tworzenie wykresu za pomocą Chart.js
-    const ctx = document.getElementById('wealth-chart');
+    const ctx = getElement('wealth-chart');
     
     if (!ctx) {
-        console.error('Nie znaleziono elementu canvas do wykresu bogactwa');
+        console.error('Nie znaleziono elementu dla wykresu bogactwa');
         return;
     }
+
+    // Przygotowanie danych
+    const labels = rounds.map((_, index) => `Runda ${index + 1}`);
+    const wealthData = [];
+    let cumulativeWealth = 1.0; // Zaczynamy od 1.0 (100%)
     
-    // Najpierw sprawdźmy, czy element canvas faktycznie istnieje w DOM
-    if (!document.contains(ctx)) {
-        console.error('Element canvas istnieje, ale nie jest w DOM');
-        return;
+    for (const round of rounds) {
+        if (round.profit_fraction !== undefined && round.profit_fraction !== null) {
+            cumulativeWealth *= (1 + round.profit_fraction);
+        }
+        wealthData.push((cumulativeWealth - 1) * 100); // Konwersja na procenty
     }
     
-    // Sprawdźmy również, czy canvas ma wymiary
-    if (ctx.width === 0 || ctx.height === 0) {
-        console.warn('Canvas ma zerowe wymiary, wykres może się nie wyświetlić poprawnie');
-    }
-    
-    const ctxContext = ctx.getContext('2d');
-    
+    // Tworzenie wykresu za pomocą Chart.js
     if (sessionWealthChart) {
         sessionWealthChart.destroy();
     }
     
-    sessionWealthChart = new Chart(ctxContext, {
-        type: 'line',
-        data: {
-            labels: labels,
-            datasets: [{
-                label: 'Skumulowany zysk (%)',
-                data: wealthData,
-                borderColor: '#7D40FE',
-                backgroundColor: 'rgba(125, 64, 254, 0.1)',
-                borderWidth: 2,
-                fill: true,
-                tension: 0.2
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                x: {
-                    grid: {
-                        color: 'rgba(255, 255, 255, 0.1)'
+    try {
+        sessionWealthChart = new Chart(ctx.getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Skumulowany zysk (%)',
+                    data: wealthData,
+                    borderColor: '#7D40FE',
+                    backgroundColor: 'rgba(125, 64, 254, 0.1)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.2
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    x: {
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        },
+                        ticks: {
+                            color: '#CCCCCC'
+                        }
                     },
-                    ticks: {
-                        color: '#CCCCCC'
-                    }
-                },
-                y: {
-                    grid: {
-                        color: 'rgba(255, 255, 255, 0.1)'
-                    },
-                    ticks: {
-                        color: '#CCCCCC',
-                        callback: function(value) {
-                            return value.toFixed(2) + '%';
+                    y: {
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        },
+                        ticks: {
+                            color: '#CCCCCC',
+                            callback: function(value) {
+                                return value + '%';
+                            }
                         }
                     }
-                }
-            },
-            plugins: {
-                legend: {
-                    display: true,
-                    labels: {
-                        color: '#FFFFFF'
-                    }
                 },
-                tooltip: {
-                    mode: 'index',
-                    intersect: false,
-                    callbacks: {
-                        label: function(context) {
-                            return `Zysk: ${context.raw.toFixed(2)}%`;
+                plugins: {
+                    legend: {
+                        display: true,
+                        labels: {
+                            color: '#FFFFFF'
+                        }
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        callbacks: {
+                            label: function(context) {
+                                return `Zysk: ${context.raw.toFixed(2)}%`;
+                            }
                         }
                     }
                 }
             }
-        }
-    });
-    
-    console.log('Wykres bogactwa został wygenerowany');
+        });
+    } catch (error) {
+        console.error('Błąd przy tworzeniu wykresu:', error);
+    }
 }
 
 // Funkcja renderująca ranking bodźców
 function renderStimuliRanking(ranking, type) {
-    // Dla tego HTML obsługujemy tylko ranking pozytywny (type === 'pos')
-    const container = document.getElementById('positive-stimulus-ranking');
+    // Funkcja obsługuje tylko bodźce pozytywne
+    if (type !== 'pos') {
+        console.log(`Ranking bodźców typu ${type} pominięty - obsługiwane są tylko bodźce pozytywne`);
+        return;
+    }
     
+    const container = getElement('positive-stimulus-ranking');
     if (!container) {
-        console.error(`Nie znaleziono kontenera dla rankingu bodźców`);
+        console.error('Nie znaleziono kontenera dla rankingu bodźców pozytywnych');
         return;
     }
     
     if (!ranking || ranking.length === 0) {
-        container.innerHTML = `<p class="empty-message">Brak danych rankingowych dla bodźców pozytywnych</p>`;
+        container.innerHTML = '<p>Brak danych dla rankingu bodźców pozytywnych</p>';
         return;
     }
     
-    // Czyszczenie kontenera
-    container.innerHTML = '';
+    // Filtruj tylko bodźce z successes > 0 (zgodnie z wymaganiami)
+    const successfulStimuli = ranking.filter(stimulus => stimulus.successes > 0);
     
-    // Sortowanie rankingu według liczby sukcesów (malejąco)
-    const sortedRanking = [...ranking].sort((a, b) => b.total_successes - a.total_successes);
+    if (successfulStimuli.length === 0) {
+        container.innerHTML = '<p>Brak bodźców z sukcesami w tej sesji</p>';
+        return;
+    }
     
-    // Pobierz token autoryzacji
-    const token = localStorage.getItem('token');
-    
-    // Tworzenie elementów rankingu w poziomym układzie
-    sortedRanking.forEach((stimulus, index) => {
-        const profitPercent = ((stimulus.total_profit_factor - 1) * 100).toFixed(2);
-        const profitClass = profitPercent >= 0 ? 'positive' : 'negative';
-        
-        const stimulusCard = document.createElement('div');
-        stimulusCard.className = 'stimulus-card';
-        
-        // Usunięcie obrazka - zastępujemy kolorowym prostokątem z ID bodźca
-        stimulusCard.innerHTML = `
-            <div class="stimulus-image" style="background-color: rgba(125, 64, 254, 0.2); display: flex; align-items: center; justify-content: center;">
-                <div style="font-size: 24px; font-weight: bold; color: #7D40FE;">ID: ${stimulus.id}</div>
-            </div>
-            <div class="stimulus-details">
-                <div class="stimulus-id">ID: ${stimulus.id}</div>
-                <div class="stimulus-success">Sukcesy: ${stimulus.total_successes}</div>
-                <div class="stimulus-origin">
-                    ${stimulus.origin === 'child' ? 'Pochodzenie: Dziecko' : 
-                      stimulus.origin === 'bought' ? 'Pochodzenie: Kupiony' : 'Pochodzenie: Losowy'}
-                </div>
-                ${stimulus.parent ? `<div class="stimulus-parent">Rodzic: #${stimulus.parent}</div>` : ''}
-                <div class="stimulus-profit ${profitClass}">Zysk: ${profitPercent}%</div>
-            </div>
-        `;
-        
-        container.appendChild(stimulusCard);
-        
-        // Próbujemy załadować miniaturkę tylko jeśli mamy token
-        if (token) {
-            const thumbnailUrl = `/api/images/${stimulus.id}/thumbnail`;
-            const imageContainer = stimulusCard.querySelector('.stimulus-image');
-            
-            // Tworzymy element obrazu
-            const imgElement = document.createElement('img');
-            imgElement.alt = `Bodziec #${stimulus.id}`;
-            imgElement.style.display = 'none'; // Ukrywamy go do momentu wczytania
-            
-            // Obsługujemy ładowanie obrazka
-            fetch(thumbnailUrl, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP error! Status: ${response.status}`);
-                }
-                return response.blob();
-            })
-            .then(blob => {
-                const objectURL = URL.createObjectURL(blob);
-                imgElement.src = objectURL;
-                imgElement.style.display = 'block';
-                // Zastępujemy tekst obrazkiem
-                imageContainer.innerHTML = '';
-                imageContainer.appendChild(imgElement);
-            })
-            .catch(error => {
-                console.warn(`Nie można załadować miniaturki dla bodźca #${stimulus.id}:`, error.message);
-                // Pozostawiamy domyślną zawartość - ID jako tekst
-            });
+    // Sortuj najpierw po liczbie sukcesów (malejąco), potem po zysku (cumulative_factor - 1) malejąco
+    const sortedStimuli = [...successfulStimuli].sort((a, b) => {
+        if (a.successes !== b.successes) {
+            return b.successes - a.successes; // Najpierw po liczbie sukcesów malejąco
+        } else {
+            // Przy remisie po (cumulative_factor - 1) malejąco
+            return (b.cumulative_factor - 1) - (a.cumulative_factor - 1);
         }
     });
     
-    console.log(`Wyrenderowano ${sortedRanking.length} bodźców w rankingu`);
+    // Przygotowanie HTML
+    let html = '';
+    
+    sortedStimuli.forEach((stimulus, index) => {
+        const profit = ((stimulus.cumulative_factor - 1) * 100).toFixed(2);
+        
+        html += `
+            <div class="stimulus-card">
+                <div class="stimulus-image">
+                    <img src="/api/images/${stimulus.id}/thumbnail" alt="Bodziec #${stimulus.id}">
+                </div>
+                <div class="stimulus-details">
+                    <div class="stimulus-id">ID: ${stimulus.id}</div>
+                    <div class="stimulus-success">Sukcesy w sesji: ${stimulus.successes || 0}</div>
+                    <div class="stimulus-failure">Porażki w sesji: ${stimulus.failures || 0}</div>
+                    <div>Pochodzenie: ${
+                        stimulus.origin === 'child' ? 'Dziecko' : 
+                        stimulus.origin === 'bought' ? 'Kupiony' : 'Losowy'
+                    }</div>
+                    <div class="stimulus-profit">Zysk: ${profit}%</div>
+                </div>
+            </div>
+        `;
+    });
+    
+    container.innerHTML = html;
+    console.log(`Wyrenderowano ranking bodźców pozytywnych z ${sortedStimuli.length} elementami`);
 }
 
 // Funkcja renderująca szczegóły rund
 function renderRoundsDetails(rounds) {
+    const roundsTableBody = getElement('rounds-details-body');
+    
+    if (!roundsTableBody) {
+        console.error('Nie znaleziono tabeli z detalami rund');
+        return;
+    }
+    
     if (!rounds || rounds.length === 0) {
-        roundsTable.innerHTML = '<tr><td colspan="7">Brak danych o rundach</td></tr>';
+        roundsTableBody.innerHTML = '<tr><td colspan="7">Brak danych o rundach</td></tr>';
         return;
     }
     
     // Przygotowanie HTML
-    let html = `
-        <tr>
-            <th>Nr</th>
-            <th>Data/Czas</th>
-            <th>Wybór</th>
-            <th>Akcja</th>
-            <th>Zmiana kursu</th>
-            <th>Zysk</th>
-            <th>Wynik</th>
-        </tr>
-    `;
+    let html = '';
     
     rounds.forEach((round, index) => {
         const dateTime = new Date(round.created_at).toLocaleString();
-        const priceChange = (((round.end_price / round.start_price) - 1) * 100).toFixed(2);
-        const profit = (round.profit_fraction * 100).toFixed(2);
+        const priceChange = round.profit_fraction ? (round.profit_fraction * 100).toFixed(2) : '0.00';
+        const profit = round.profit_fraction ? (round.profit_fraction * 100).toFixed(2) : '0.00';
         
         html += `
             <tr>
                 <td>${index + 1}</td>
                 <td>${dateTime}</td>
+                <td>${round.pos_image_id || 'N/A'}</td>
+                <td>${round.neg_image_id || 'N/A'}</td>
                 <td>${round.user_choice_side === 'LEFT' ? 'Lewa' : 'Prawa'}</td>
-                <td>${round.user_action === 'BUY' ? 'Kupno' : 'Sprzedaż'}</td>
                 <td>${priceChange > 0 ? '+' : ''}${priceChange}%</td>
-                <td>${profit > 0 ? '+' : ''}${profit}%</td>
                 <td class="${round.result === 'SUCCESS' ? 'success' : 'failure'}">${round.result === 'SUCCESS' ? 'SUKCES' : 'PORAŻKA'}</td>
             </tr>
         `;
     });
     
-    roundsTable.innerHTML = html;
+    roundsTableBody.innerHTML = html;
 }
 
 // Funkcja przełączająca widoczność szczegółów rund
 function toggleRoundsDetails() {
-    if (roundsDetailsContainer.style.display === 'none' || !roundsDetailsContainer.style.display) {
-        roundsDetailsContainer.style.display = 'block';
-        detailsToggleButton.textContent = 'Ukryj szczegółowy przebieg rund';
+    const detailsContainer = getElement('rounds-details');
+    const button = getElement('show-details-button');
+    
+    if (!detailsContainer || !button) {
+        console.error('Nie znaleziono elementów do przełączania widoku szczegółów');
+        return;
+    }
+    
+    if (detailsContainer.style.display === 'none' || !detailsContainer.style.display) {
+        detailsContainer.style.display = 'block';
+        button.textContent = 'Ukryj szczegółowy przebieg rund';
     } else {
-        roundsDetailsContainer.style.display = 'none';
-        detailsToggleButton.textContent = 'Pokaż szczegółowy przebieg rund';
+        detailsContainer.style.display = 'none';
+        button.textContent = 'Pokaż szczegółowy przebieg rund';
     }
 }
 
 // Funkcja rozpoczynająca nową sesję
 async function startNewSession() {
+    console.log('Rozpoczynanie nowej sesji...');
     try {
-        showLoadingOverlay('Tworzenie nowej sesji...');
+        showLoading('Tworzenie nowej sesji...');
+        
+        // Sprawdzenie tokenu i dodanie logów diagnostycznych
+        const token = localStorage.getItem('token');
+        if (!token) {
+            console.error('Brak tokenu autoryzacji. Przekierowanie do logowania.');
+            window.location.href = '/';
+            return;
+        }
+        console.log('Token autoryzacji znaleziony, długość:', token.length);
+        
+        // Sprawdzenie czy najpierw trzeba wygenerować nową pulę
+        console.log('Sprawdzam czy mamy aktualną sesję do wykorzystania...');
+        try {
+            // Pobranie aktualnej sesji z URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const sessionId = urlParams.get('session_id');
+            
+            if (sessionId) {
+                console.log(`Znaleziono ID sesji w URL: ${sessionId}, sprawdzam dostępność nowej puli...`);
+                
+                // Sprawdź czy istnieje już wygenerowana pula dla następnej sesji
+                const poolStatsResponse = await fetch(`/api/sessions/${sessionId}/next-pool-stats`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (poolStatsResponse.ok) {
+                    const poolStats = await poolStatsResponse.json();
+                    console.log('Statystyki puli:', poolStats);
+                    
+                    if (!poolStats.is_ready) {
+                        console.log('Brak gotowej puli, inicjuję generowanie...');
+                        // Wygeneruj nową pulę
+                        const generateResponse = await fetch('/api/sessions/generate-new-pool', {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${token}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ previous_session_id: sessionId })
+                        });
+                        
+                        if (generateResponse.ok) {
+                            console.log('Żądanie generowania nowej puli zostało wysłane');
+                            // Pokaż informację o generowaniu
+                            updateLoadingMessage('Generowanie nowej puli danych (może potrwać do 1 minuty)...');
+                            
+                            // Sprawdzaj status generowania co 2 sekundy
+                            let poolReady = false;
+                            let attempts = 0;
+                            const maxAttempts = 30; // Maksymalnie 60 sekund
+                            
+                            while (!poolReady && attempts < maxAttempts) {
+                                await new Promise(resolve => setTimeout(resolve, 2000)); // Poczekaj 2 sekundy
+                                attempts++;
+                                
+                                const checkResponse = await fetch(`/api/sessions/${sessionId}/next-pool-stats`, {
+                                    headers: {
+                                        'Authorization': `Bearer ${token}`
+                                    }
+                                });
+                                
+                                if (checkResponse.ok) {
+                                    const checkData = await checkResponse.json();
+                                    console.log(`Sprawdzenie #${attempts}: `, checkData);
+                                    
+                                    if (checkData.is_ready) {
+                                        console.log('Nowa pula jest gotowa!');
+                                        poolReady = true;
+                                        break;
+                                    }
+                                }
+                                
+                                updateLoadingMessage(`Generowanie nowej puli danych (${attempts*2}s)...`);
+                            }
+                            
+                            if (!poolReady) {
+                                console.log('Upłynął czas oczekiwania na nową pulę, próbuję utworzyć sesję bezpośrednio...');
+                            }
+                        } else {
+                            console.error('Błąd podczas żądania generowania nowej puli:', await generateResponse.text());
+                        }
+                    } else {
+                        console.log('Nowa pula jest już gotowa do użycia');
+                    }
+                }
+            }
+        } catch (poolError) {
+            console.error('Błąd podczas sprawdzania/generowania puli:', poolError);
+            // Kontynuuj z tworzeniem sesji nawet jeśli wystąpił błąd
+        }
         
         // Wywołanie API do utworzenia nowej sesji
+        console.log('Wysyłanie żądania do API o utworzenie nowej sesji...');
         const response = await fetch('/api/sessions', {
             method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        console.log('Odpowiedź otrzymana, status:', response.status);
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Błąd odpowiedzi serwera:', errorText);
+            throw new Error(`Błąd podczas tworzenia nowej sesji (${response.status}): ${errorText}`);
+        }
+        
+        const sessionData = await response.json();
+        console.log('Utworzono nową sesję:', sessionData);
+        
+        // Przekierowanie do ekranu gry z nowym ID sesji
+        console.log('Przekierowanie do ekranu gry...');
+        window.location.href = `/game?session_id=${sessionData.id}`;
+    } catch (error) {
+        console.error('Błąd rozpoczynania nowej sesji:', error);
+        hideLoading();
+        alert('Wystąpił błąd podczas tworzenia nowej sesji. Spróbuj ponownie.');
+    }
+}
+
+// Pomocnicza funkcja do aktualizacji komunikatu ładowania
+function updateLoadingMessage(message) {
+    const loadingMessage = getElement('loading-message');
+    if (loadingMessage) {
+        loadingMessage.textContent = message;
+    }
+}
+
+// Funkcja sprawdzająca czy nowa pula jest gotowa
+async function checkPoolReadiness(sessionId, retryCount = 0) {
+    try {
+        const response = await fetch(`/api/sessions/${sessionId}/next-pool-stats`, {
+            method: 'GET',
             headers: {
                 'Authorization': `Bearer ${localStorage.getItem('token')}`,
                 'Content-Type': 'application/json'
@@ -1075,24 +878,51 @@ async function startNewSession() {
         });
         
         if (!response.ok) {
-            throw new Error('Błąd podczas tworzenia nowej sesji');
+            throw new Error('Błąd pobierania statystyk nowej puli');
         }
         
-        // Przekierowanie do ekranu gry
-        window.location.href = '/game';
+        const data = await response.json();
+        
+        if (data.is_ready) {
+            // Pula jest gotowa - aktywuj przycisk i wyświetl statystyki
+            const newSessionButton = document.getElementById('new-session-button');
+            if (newSessionButton) {
+                newSessionButton.disabled = false;
+                newSessionButton.classList.remove('loading');
+                newSessionButton.innerHTML = 'Nowa sesja';
+                
+                // Ustaw ID sesji dla przycisku
+                newSessionButton.setAttribute('data-session-id', data.session_id);
+            }
+            
+            // Wyświetl statystyki nowej puli
+            displayPoolStatistics(data);
+        } else if (retryCount < 150) { // Ograniczenie do 150 prób (5 minut przy 2s interwale)
+            // Jeszcze nie gotowa - sprawdź ponownie za 2 sekundy
+            setTimeout(() => checkPoolReadiness(sessionId, retryCount + 1), 2000);
+        } else {
+            // Przekroczono limit prób - wyświetl komunikat
+            console.error('Nie udało się wygenerować puli w oczekiwanym czasie');
+            const newSessionButton = document.getElementById('new-session-button');
+            if (newSessionButton) {
+                newSessionButton.disabled = false;
+                newSessionButton.classList.remove('loading');
+                newSessionButton.innerHTML = 'Nowa sesja';
+            }
+        }
     } catch (error) {
-        console.error('Błąd rozpoczynania nowej sesji:', error);
-        hideLoadingOverlay();
-        alert('Wystąpił błąd podczas tworzenia nowej sesji. Spróbuj ponownie.');
+        console.error('Błąd sprawdzania gotowości puli:', error);
+        // W przypadku błędu, spróbuj ponownie za chwilę (jeśli nie przekroczono limitu prób)
+        if (retryCount < 150) {
+            setTimeout(() => checkPoolReadiness(sessionId, retryCount + 1), 2000);
+        } else {
+            // Przekroczono limit prób - aktywuj przycisk
+            const newSessionButton = document.getElementById('new-session-button');
+            if (newSessionButton) {
+                newSessionButton.disabled = false;
+                newSessionButton.classList.remove('loading');
+                newSessionButton.innerHTML = 'Nowa sesja';
+            }
+        }
     }
 }
-
-// Funkcje pomocnicze do pokazywania/ukrywania overlay ładowania
-function showLoading(message = 'Ładowanie...') {
-    loadingMessage.textContent = message;
-    loadingOverlay.style.display = 'flex';
-}
-
-function hideLoading() {
-    loadingOverlay.style.display = 'none';
-} 

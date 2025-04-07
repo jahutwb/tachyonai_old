@@ -23,6 +23,40 @@
    - Użytkownik ma do dyspozycji dwie „kurtyny”, nie wiedząc, która oznacza BUY, a która SELL.  
    - Aplikacja w sposób ukryty łączy wybór użytkownika z kupnem bądź sprzedażą, po czym sprawdza rzeczywisty (lub symulowany) ruch ceny.
 
+### Określanie sukcesu i liczenie profit_fraction
+
+#### Sukces (SUCCESS) vs. Porażka (FAILURE)
+
+1. **Jeśli user_action = BUY**  
+   - **SUCCESS** – gdy `end_price > start_price` (cena poszła w górę)  
+   - **FAILURE** – gdy `end_price < start_price` (cena spadła)
+
+2. **Jeśli user_action = SELL**  
+   - **SUCCESS** – gdy `end_price < start_price` (cena spadła)  
+   - **FAILURE** – gdy `end_price > start_price` (cena poszła w górę)
+
+---
+
+#### Wyliczanie profit_fraction (ułamek zysku/straty)
+
+1. **user_action = BUY**  
+   \[
+   \text{profit\_fraction} = \frac{\text{end\_price}}{\text{start\_price}} - 1
+   \]  
+   - Przykład: `start_price=100, end_price=105`  
+     \(\frac{105}{100} - 1 = 0.05\) (czyli +5%)  
+   - Przykład: `start_price=100, end_price=98`  
+     \(\frac{98}{100} - 1 = -0.02\) (czyli -2%)
+
+2. **user_action = SELL**  
+   \[
+   \text{profit\_fraction} = \frac{\text{start\_price}}{\text{end\_price}} - 1
+   \]  
+   - Przykład: `start_price=100, end_price=95`  
+     \(\frac{100}{95} - 1 \approx 0.0526\) (ok. +5.26%)  
+   - Przykład: `start_price=100, end_price=105`  
+     \(\frac{100}{105} - 1 \approx -0.0476\) (ok. -4.76%)
+
 2. **Pule Obrazów i Sesje**  
    - W każdej sesji użytkownik otrzymuje pulę pozytywnych (pos) i negatywnych (neg) obrazów.  
    - Przy sukcesie (trafienie ruchu BTC) wyświetla się obraz pozytywny i oba obrazy zostają, przy porażce – obraz negatywny i oba obrazy znikają z puli.
