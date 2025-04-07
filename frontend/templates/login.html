@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TachyonAI - Logowanie</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-logo">
+            <a href="/">TachyonAI</a>
+        </div>
+        <div class="navbar-menu">
+            <a href="/" class="navbar-item">Strona Startowa</a>
+            <a href="/stats" class="navbar-item">Statystyki Użytkownika</a>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <div class="form-container">
+            <h2>Logowanie</h2>
+            <form id="login-form">
+                <div class="form-group">
+                    <label for="username">Nazwa użytkownika</label>
+                    <input type="text" id="username" name="username" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">Hasło</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+                <div class="form-group">
+                    <button type="submit" class="button primary-button">Zaloguj</button>
+                </div>
+                <div class="form-group">
+                    <p>Nie masz konta? <a href="/signup" id="signup-link">Zarejestruj się</a></p>
+                </div>
+                <div id="error-message" class="error-message"></div>
+            </form>
+        </div>
+    </main>
+
+    <div id="loading-overlay" class="overlay" style="display: none;">
+        <div class="spinner"></div>
+        <p id="loading-message">Ładowanie...</p>
+    </div>
+
+    <script src="{{ url_for('static', path='/js/auth.js') }}"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const loginForm = document.getElementById('login-form');
+            const errorMessage = document.getElementById('error-message');
+            const loadingOverlay = document.getElementById('loading-overlay');
+
+            loginForm.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                const username = document.getElementById('username').value;
+                const password = document.getElementById('password').value;
+                
+                if (!username || !password) {
+                    errorMessage.textContent = 'Wypełnij wszystkie pola';
+                    return;
+                }
+                
+                try {
+                    loadingOverlay.style.display = 'flex';
+                    
+                    const response = await fetch('/token', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        },
+                        body: `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error('Nieprawidłowa nazwa użytkownika lub hasło');
+                    }
+                    
+                    const data = await response.json();
+                    localStorage.setItem('token', data.access_token);
+                    localStorage.setItem('username', username);
+                    
+                    // Przekierowanie do strony głównej
+                    window.location.href = '/game';
+                    
+                } catch (error) {
+                    errorMessage.textContent = error.message;
+                } finally {
+                    loadingOverlay.style.display = 'none';
+                }
+            });
+        });
+    </script>
+</body>
+</html> 

@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TachyonAI - Rejestracja</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-logo">
+            <a href="/">TachyonAI</a>
+        </div>
+        <div class="navbar-menu">
+            <a href="/" class="navbar-item">Strona Startowa</a>
+            <a href="/stats" class="navbar-item">Statystyki Użytkownika</a>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <div class="form-container">
+            <h2>Rejestracja</h2>
+            <form id="signup-form">
+                <div class="form-group">
+                    <label for="username">Nazwa użytkownika</label>
+                    <input type="text" id="username" name="username" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">Hasło</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+                <div class="form-group">
+                    <button type="submit" class="button primary-button">Zarejestruj</button>
+                </div>
+                <div class="form-group">
+                    <p>Masz już konto? <a href="/" id="login-link">Zaloguj się</a></p>
+                </div>
+                <div id="error-message" class="error-message"></div>
+            </form>
+        </div>
+    </main>
+
+    <div id="loading-overlay" class="overlay" style="display: none;">
+        <div class="spinner"></div>
+        <p id="loading-message">Ładowanie...</p>
+    </div>
+
+    <script src="{{ url_for('static', path='/js/auth.js') }}"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const signupForm = document.getElementById('signup-form');
+            const errorMessage = document.getElementById('error-message');
+            const loadingOverlay = document.getElementById('loading-overlay');
+
+            signupForm.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                const username = document.getElementById('username').value;
+                const password = document.getElementById('password').value;
+                
+                if (!username || !password) {
+                    errorMessage.textContent = 'Wypełnij wszystkie pola';
+                    return;
+                }
+                
+                try {
+                    loadingOverlay.style.display = 'flex';
+                    
+                    const response = await fetch('/signup', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            username: username,
+                            password: password
+                        })
+                    });
+                    
+                    if (!response.ok) {
+                        const data = await response.json();
+                        throw new Error(data.detail || 'Błąd rejestracji');
+                    }
+                    
+                    // Automatyczne logowanie po rejestracji
+                    const loginResponse = await fetch('/token', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        },
+                        body: `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`
+                    });
+                    
+                    if (!loginResponse.ok) {
+                        throw new Error('Rejestracja udana, ale automatyczne logowanie nie powiodło się');
+                    }
+                    
+                    const loginData = await loginResponse.json();
+                    localStorage.setItem('token', loginData.access_token);
+                    localStorage.setItem('username', username);
+                    
+                    // Przekierowanie do strony głównej
+                    window.location.href = '/game';
+                    
+                } catch (error) {
+                    errorMessage.textContent = error.message;
+                } finally {
+                    loadingOverlay.style.display = 'none';
+                }
+            });
+        });
+    </script>
+</body>
+</html> 

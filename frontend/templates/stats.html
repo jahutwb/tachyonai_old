@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TachyonAI - Statystyki Użytkownika</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-logo">
+            <a href="/">TachyonAI</a>
+        </div>
+        <div class="navbar-menu">
+            <a href="/" class="navbar-item">Strona Startowa</a>
+            <a href="/stats" class="navbar-item active">Statystyki Użytkownika</a>
+            <div class="navbar-auth">
+                <span id="username-display"></span>
+                <button id="logout-button" class="button">Wyloguj</button>
+            </div>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <div class="stats-container">
+            <h1>Statystyki Użytkownika</h1>
+            
+            <div class="stats-section">
+                <h2>Zakończone Sesje</h2>
+                <div class="sessions-list-container">
+                    <table class="sessions-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Data</th>
+                                <th>Zysk</th>
+                                <th>Liczba rund</th>
+                                <th>Akcje</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sessions-list">
+                            <!-- Tutaj będą dodawane wiersze z sesjami -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div class="stats-section">
+                <h2>Wykres Całkowitego Bogactwa w Kolejnych Sesjach</h2>
+                <div class="chart-container">
+                    <canvas id="total-wealth-chart"></canvas>
+                </div>
+            </div>
+            
+            <div class="stats-section">
+                <h2>Ranking Globalny Obrazów</h2>
+                <div id="global-stimulus-ranking" class="ranking-container">
+                    <!-- Tutaj będą dodawane elementy rankingu -->
+                </div>
+            </div>
+            
+            <div class="stats-section">
+                <h2>Skuteczność w Zależności od Pory Dnia</h2>
+                <div class="chart-container">
+                    <canvas id="time-success-chart"></canvas>
+                </div>
+            </div>
+            
+            <div class="stats-section">
+                <h2>Genealogia Bodźców</h2>
+                <div class="genealogy-controls">
+                    <button id="show-positive-genealogy" class="button secondary-button active">Bodźce Pozytywne</button>
+                    <button id="show-negative-genealogy" class="button secondary-button">Bodźce Negatywne</button>
+                </div>
+                <div id="genealogy-container" class="genealogy-container">
+                    <!-- Tutaj będzie wyświetlana genealogia bodźców -->
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div id="loading-overlay" class="overlay" style="display: none;">
+        <div class="spinner"></div>
+        <p id="loading-message">Ładowanie statystyk...</p>
+    </div>
+
+    <div id="session-details-modal" class="modal">
+        <div class="modal-content large-modal">
+            <span class="close">&times;</span>
+            <h2>Szczegóły Sesji <span id="session-details-id"></span></h2>
+            <div class="session-details-content">
+                <!-- Tutaj będą wyświetlane szczegóły sesji -->
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', path='/js/auth.js') }}"></script>
+    <script src="{{ url_for('static', path='/js/stats.js') }}"></script>
+</body>
+</html> 

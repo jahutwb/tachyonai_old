@@ -100,6 +100,8 @@ class Round(Base):
     neg_image_id = Column(Integer, ForeignKey("images.id"))
     user_choice_side = Column(String, nullable=True)
     user_action = Column(String, nullable=True)
+    left_action = Column(String, nullable=True)
+    right_action = Column(String, nullable=True)
     start_price = Column(Float)
     end_price = Column(Float, nullable=True)
     profit_fraction = Column(Float, nullable=True)

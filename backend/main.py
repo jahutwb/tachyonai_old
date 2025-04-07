@@ -108,6 +108,18 @@ async def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
     return db_user
 
 
+@app.get("/signup")
+async def signup_page(request: Request):
+    """Strona z formularzem rejestracji."""
+    return templates.TemplateResponse("signup.html", {"request": request})
+
+
+@app.get("/login")
+async def login_page(request: Request):
+    """Strona z formularzem logowania."""
+    return templates.TemplateResponse("login.html", {"request": request})
+
+
 @app.get("/users/me", response_model=schemas.UserResponse)
 async def read_users_me(current_user: models.User = Depends(auth.get_current_user)):
     """Endpoint zwracający dane aktualnie zalogowanego użytkownika."""

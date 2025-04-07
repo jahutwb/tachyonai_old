@@ -17,6 +17,7 @@
     --spacing-sm: 8px;
     --spacing-md: 16px;
     --spacing-lg: 24px;
+    --spacing-xl: 32px;
     --border-radius: 8px;
 }
 
@@ -227,9 +228,16 @@ a:hover {
 /* Game screen (kurtyny) */
 .game-container {
     display: flex;
-    justify-content: space-between;
+    justify-content: center;
+    align-items: center;
     width: 100%;
-    height: 70vh;
+    height: 80vh;
+}
+
+.curtain-container {
+    display: flex;
+    width: 100%;
+    height: 100%;
 }
 
 .curtain {
@@ -245,6 +253,34 @@ a:hover {
     transition: width 0.5s ease;
     overflow: hidden;
     position: relative;
+}
+
+#left-curtain {
+    margin-right: var(--spacing-sm);
+}
+
+#right-curtain {
+    margin-left: var(--spacing-sm);
+}
+
+.curtain-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.curtain-text {
+    font-size: 24px;
+    font-weight: bold;
+    color: var(--text-color);
+}
+
+.action-text {
+    display: none; /* Ukrycie akcji zgodnie ze specyfikacją */
+    margin-top: var(--spacing-md);
+    font-size: 18px;
+    color: var(--accent-color);
 }
 
 .curtain:hover {
@@ -291,7 +327,319 @@ a:hover {
     color: var(--text-color-secondary);
 }
 
-/* Responsywność */
+/* Dodatkowe style dla statystyk i genealogii */
+.summary-section {
+    margin-bottom: var(--spacing-xl);
+    background-color: var(--bg-color-light);
+    padding: var(--spacing-md);
+    border-radius: var(--border-radius);
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: var(--spacing-md);
+    margin: var(--spacing-md) 0;
+}
+
+.stat-card {
+    background-color: var(--bg-color);
+    padding: var(--spacing-md);
+    border-radius: var(--border-radius);
+    text-align: center;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.chart-container {
+    width: 100%;
+    height: 400px;
+    margin: var(--spacing-md) 0;
+    position: relative;
+}
+
+.ranking-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-md);
+    margin: var(--spacing-md) 0;
+}
+
+.stimulus-rank-item {
+    background-color: var(--bg-color);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-sm);
+    display: flex;
+    align-items: center;
+    width: calc(50% - var(--spacing-md));
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.stimulus-rank-number {
+    font-size: 24px;
+    font-weight: bold;
+    color: var(--accent-color);
+    margin-right: var(--spacing-md);
+    min-width: 30px;
+}
+
+.stimulus-rank-image {
+    width: 80px;
+    height: 80px;
+    overflow: hidden;
+    border-radius: var(--border-radius);
+    margin-right: var(--spacing-md);
+}
+
+.stimulus-rank-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.stimulus-rank-details {
+    flex: 1;
+}
+
+.stimulus-id {
+    font-weight: bold;
+    margin-bottom: 4px;
+}
+
+.stimulus-success-count, .stimulus-origin, .stimulus-profit {
+    font-size: 14px;
+    color: var(--text-color-secondary);
+    margin-bottom: 2px;
+}
+
+.stimulus-parent-link {
+    color: var(--accent-color);
+    cursor: pointer;
+    text-decoration: underline;
+    margin-top: 4px;
+}
+
+.details-container {
+    max-height: 500px;
+    overflow-y: auto;
+    margin: var(--spacing-md) 0;
+    background-color: var(--bg-color);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-md);
+}
+
+.details-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.details-table th, .details-table td {
+    padding: var(--spacing-sm);
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.details-table th {
+    background-color: var(--bg-color-light);
+    position: sticky;
+    top: 0;
+}
+
+.summary-actions {
+    display: flex;
+    justify-content: center;
+    margin-top: var(--spacing-xl);
+}
+
+/* Genealogia */
+.genealogy-controls {
+    display: flex;
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-md);
+}
+
+.genealogy-container {
+    background-color: var(--bg-color);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-md);
+}
+
+.genealogy-tree {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-lg);
+    margin: var(--spacing-md) 0;
+}
+
+.genealogy-node {
+    background-color: var(--bg-color-light);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-sm);
+    min-width: 200px;
+}
+
+.genealogy-node-content {
+    display: flex;
+    align-items: center;
+    margin-bottom: var(--spacing-sm);
+}
+
+.node-image {
+    width: 60px;
+    height: 60px;
+    overflow: hidden;
+    border-radius: var(--border-radius);
+    margin-right: var(--spacing-md);
+}
+
+.node-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.node-details {
+    flex: 1;
+    font-size: 14px;
+}
+
+.genealogy-children {
+    margin-left: 20px;
+    border-left: 2px solid var(--accent-color);
+    padding-left: var(--spacing-md);
+}
+
+/* Statystyki sesji */
+.session-details-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-lg);
+}
+
+.stat-group {
+    background-color: var(--bg-color-light);
+    padding: var(--spacing-sm);
+    border-radius: var(--border-radius);
+    min-width: 100px;
+    text-align: center;
+}
+
+.sessions-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.sessions-table th, .sessions-table td {
+    padding: var(--spacing-sm);
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.sessions-list-container {
+    max-height: 300px;
+    overflow-y: auto;
+    background-color: var(--bg-color);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-sm);
+}
+
+.session-chart-container {
+    height: 300px;
+    margin: var(--spacing-md) 0;
+}
+
+.rounds-table-container {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+/* Klasy statusów i wyników */
+.success {
+    background-color: rgba(40, 167, 69, 0.2);
+    color: #28a745;
+    padding: 4px 8px;
+    border-radius: var(--border-radius);
+    font-weight: bold;
+}
+
+.failure {
+    background-color: rgba(220, 53, 69, 0.2);
+    color: #dc3545;
+    padding: 4px 8px;
+    border-radius: var(--border-radius);
+    font-weight: bold;
+}
+
+.positive {
+    color: #28a745;
+}
+
+.negative {
+    color: #dc3545;
+}
+
+/* Rozszerzony modal */
+.large-modal {
+    max-width: 800px;
+    width: 80%;
+}
+
+/* Rozszerzenie dla widoku wyniku w rozgrywce */
+.result-container {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: var(--spacing-lg);
+}
+
+.result-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: var(--spacing-lg);
+}
+
+.result-status {
+    font-size: 28px;
+    font-weight: bold;
+    margin-right: var(--spacing-lg);
+    padding: 8px 16px;
+    border-radius: var(--border-radius);
+}
+
+.profit-change {
+    font-size: 24px;
+    font-weight: bold;
+}
+
+.stimulus-container {
+    margin: var(--spacing-lg) 0;
+    max-width: 800px;
+    max-height: 600px;
+    overflow: hidden;
+    border-radius: var(--border-radius);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.stimulus-image {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+.next-actions {
+    margin-top: var(--spacing-lg);
+    display: flex;
+    gap: var(--spacing-md);
+}
+
+/* Przycisk mniejszy */
+.small-button {
+    padding: 4px 8px;
+    font-size: 14px;
+}
+
+/* Reaktywne style */
 @media (max-width: 768px) {
     .navbar-menu {
         flex-direction: column;
@@ -311,5 +659,13 @@ a:hover {
     .curtain {
         height: 30vh;
         margin: var(--spacing-md) 0;
+    }
+    
+    .stimulus-rank-item {
+        width: 100%;
+    }
+    
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
     }
 } 

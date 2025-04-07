@@ -421,16 +421,44 @@ async function loadSessionSummary(sessionId) {
         });
         
         if (!summaryResponse.ok) {
-            throw new Error('Błąd podczas pobierania podsumowania sesji');
+            console.error('Błąd pobierania podsumowania sesji:', await summaryResponse.text());
+            
+            // Kontynuuj bez podsumowania
+            renderSessionStats({
+                success_count: currentSession.success_count || 0,
+                failure_count: currentSession.failure_count || 0,
+                session_profit_factor: currentSession.session_profit_factor || 1.0,
+                remaining_pairs: currentSession.remaining_pairs || 0,
+            });
+            renderWealthChart(sessionRounds);
+            renderRoundsDetails(sessionRounds);
+            
+            hideLoading();
+            return;
         }
         
         const sessionSummary = await summaryResponse.json();
+        console.log('Podsumowanie sesji:', sessionSummary);
         
         // Renderowanie danych
         renderSessionStats(sessionSummary);
         renderWealthChart(sessionRounds);
-        renderStimuliRanking(sessionSummary.pos_ranking, 'pos');
-        renderStimuliRanking(sessionSummary.neg_ranking, 'neg');
+        
+        // Bezpieczne renderowanie rankingów, jeśli są dostępne
+        if (sessionSummary.pos_ranking) {
+            renderStimuliRanking(sessionSummary.pos_ranking, 'pos');
+        } else {
+            console.log('Brak danych rankingowych dla bodźców pozytywnych');
+            document.getElementById('pos-stimuli-ranking').innerHTML = '<p>Brak danych dla rankingu bodźców pozytywnych</p>';
+        }
+        
+        if (sessionSummary.neg_ranking) {
+            renderStimuliRanking(sessionSummary.neg_ranking, 'neg');
+        } else {
+            console.log('Brak danych rankingowych dla bodźców negatywnych');
+            document.getElementById('neg-stimuli-ranking').innerHTML = '<p>Brak danych dla rankingu bodźców negatywnych</p>';
+        }
+        
         renderRoundsDetails(sessionRounds);
         
         hideLoading();

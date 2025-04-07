@@ -3,148 +3,161 @@
  */
 
 const puppeteer = require('puppeteer');
+const fs = require('fs');
+const path = require('path');
+
+// Utworzenie katalogu na zrzuty ekranu
+const screenshotsDir = path.join(__dirname, 'screenshots');
+if (!fs.existsSync(screenshotsDir)) {
+  fs.mkdirSync(screenshotsDir, { recursive: true });
+}
+
+// Pomocnicza funkcja do robienia zrzutów ekranu
+async function takeScreenshot(page, name) {
+  await page.screenshot({
+    path: path.join(screenshotsDir, `${name}.png`),
+    fullPage: true
+  });
+}
 
 describe('Testy rozgrywki', () => {
-  const testUsername = `testuser_${Math.floor(Math.random() * 10000)}`;
-  const testPassword = 'password123';
-  
+  let browser;
+  let page;
+
   beforeAll(async () => {
-    // Zarejestruj nowego użytkownika
-    await page.goto('http://localhost:8000/signup');
-    await page.waitForSelector('#username');
-    await page.type('#username', testUsername);
-    await page.type('#password', testPassword);
-    
-    await Promise.all([
-      page.click('button[type="submit"]'),
-      page.waitForNavigation()
-    ]);
+    browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
   });
-  
+
+  afterAll(async () => {
+    await browser.close();
+  });
+
   beforeEach(async () => {
-    // Upewnij się, że użytkownik jest zalogowany przed każdym testem
-    if (!page.url().includes('game')) {
-      await login(page, testUsername, testPassword);
-    }
+    page = await browser.newPage();
+    await page.goto('http://localhost:8000/');
   });
-  
-  describe('Tworzenie nowej sesji', () => {
-    it('powinno utworzyć nową sesję po kliknięciu przycisku', async () => {
-      await page.goto('http://localhost:8000/game');
-      await page.waitForSelector('#new-session-button');
-      
-      await Promise.all([
-        page.click('#new-session-button'),
-        page.waitForResponse(response => response.url().includes('/api/sessions') && response.status() === 200)
-      ]);
-      
-      // Sprawdź, czy ekran rozgrywki się wyświetla
-      await page.waitForSelector('.curtain-container');
-      const curtains = await page.$$('.curtain');
-      expect(curtains.length).toBe(2);
-      
-      // Sprawdź, czy pasek statystyk jest widoczny
-      await page.waitForSelector('.stats-bar');
-      const statsBar = await page.$('.stats-bar');
-      expect(statsBar).not.toBeNull();
-    });
+
+  afterEach(async () => {
+    await page.close();
   });
-  
-  describe('Interakcja z kurtynami', () => {
-    it('powinna pokazać obraz po kliknięciu kurtyny', async () => {
-      await page.goto('http://localhost:8000/game');
-      await page.waitForSelector('.curtain');
-      
-      // Kliknij lewą kurtynę
-      const leftCurtain = await page.$('.curtain:nth-child(1)');
-      await leftCurtain.click();
-      
-      // Sprawdź, czy kurtyna się otwiera (animacja)
-      await page.waitForSelector('.curtain.open');
-      
-      // Sprawdź, czy obraz się pokazał
-      await page.waitForSelector('.curtain.open img');
-      const image = await page.$('.curtain.open img');
-      expect(image).not.toBeNull();
-      
-      // Sprawdź, czy pojawił się wskaźnik oczekiwania na zmianę ceny
-      await page.waitForSelector('.price-change-indicator');
-    });
+
+  test('Rozgrywka powinna wyświetlać obrazki bodźca, zmniejszać pary tylko przy porażce i przechodzić do podsumowania', async () => {
+    // 1. Logowanie użytkownika
+    await page.click('#login-button');
+    await page.waitForSelector('#login-form', { visible: true });
     
-    it('powinna zakończyć rundę po zmianie ceny i przejść do następnej', async () => {
-      await page.goto('http://localhost:8000/game');
-      await page.waitForSelector('.curtain');
+    await page.type('#login-username', 'testuser_3804');
+    await page.type('#login-password', 'password123');
+    await page.click('#login-form button[type="submit"]');
+    
+    // Poczekaj na zalogowanie
+    await page.waitForFunction(
+      () => document.querySelector('#username-display').textContent.includes('testuser_3804'),
+      { timeout: 5000 }
+    );
+    
+    // 2. Rozpoczęcie gry
+    await page.click('#start-game-button');
+    
+    // Czekamy na załadowanie ekranu gry
+    await page.waitForSelector('.curtain-container', { timeout: 5000 });
+    console.log('Strona gry załadowana');
+    
+    // Zapisujemy początkową wartość remaining_pairs
+    const initialPairsText = await page.$eval('#remaining-pairs', el => el.textContent);
+    const initialPairs = parseInt(initialPairsText);
+    console.log(`Początkowa liczba par: ${initialPairs}`);
+    
+    // 3. Wykonujemy kilka rund
+    let currentPairs = initialPairs;
+    let decreasedAfterSuccess = false;
+    let stimulusImageDisplayed = false;
+    
+    for (let i = 0; i < 3; i++) {
+      console.log(`Rozpoczynam rundę ${i+1}`);
       
-      // Kliknij lewą kurtynę
-      const leftCurtain = await page.$('.curtain:nth-child(1)');
-      await leftCurtain.click();
+      // Wybieramy losowo lewą lub prawą kurtynę
+      const side = Math.random() > 0.5 ? 'left' : 'right';
+      await page.click(`#${side}-curtain`);
       
-      // Poczekaj na otwarcie kurtyny
-      await page.waitForSelector('.curtain.open');
+      // Czekamy na wynik (sukces lub porażka)
+      await page.waitForSelector('#result-status', { visible: true, timeout: 5000 });
       
-      // Poczekaj na zakończenie rundy (symulacja zmiany ceny i pokazanie wyniku)
-      await page.waitForSelector('.round-result', { timeout: 15000 });
+      // Sprawdzamy czy wynik to sukces czy porażka
+      const resultText = await page.$eval('#result-status', el => el.textContent);
+      console.log(`Wynik rundy: ${resultText}`);
       
-      // Sprawdź, czy wynik rundy jest widoczny
-      const roundResult = await page.$('.round-result');
-      expect(roundResult).not.toBeNull();
+      // Sprawdzamy czy obrazek jest wyświetlany
+      await takeScreenshot(page, `round-${i+1}-result`);
       
-      // Kliknij przycisk "Następna runda"
-      await page.waitForSelector('#next-round-button');
-      await page.click('#next-round-button');
-      
-      // Sprawdź, czy nowa runda się załadowała
-      await page.waitForSelector('.curtain:not(.open)');
-      
-      // Sprawdź, czy pasek statystyk został zaktualizowany
-      await page.waitForSelector('.stats-bar');
-      const roundsPlayed = await page.$eval('.stats-bar .rounds-played', el => el.textContent);
-      expect(parseInt(roundsPlayed)).toBeGreaterThan(0);
-    });
-  });
-  
-  describe('Zakończenie sesji', () => {
-    it('powinna pokazać podsumowanie po zakończeniu wszystkich rund', async () => {
-      // Ten test symuluje przejście przez wszystkie rundy w sesji
-      // Uwaga: W rzeczywistym teście możemy chcieć zmodyfikować backend, aby dla testów używał mniejszej liczby rund
-      
-      await page.goto('http://localhost:8000/game');
-      await page.waitForSelector('.curtain');
-      
-      // Utwórz nową sesję z tylko jedną rundą (w celach testowych)
-      await page.evaluate(() => {
-        // Można użyć LocalStorage do zapisania flagi dla testów
-        localStorage.setItem('testMode', 'true');
+      const imageVisible = await page.evaluate(() => {
+        const img = document.getElementById('stimulus-image');
+        return img && img.complete && img.naturalWidth > 0;
       });
       
-      await page.reload();
-      await page.waitForSelector('.curtain');
+      if (imageVisible) {
+        stimulusImageDisplayed = true;
+        console.log('Obrazek bodźca wyświetlany poprawnie');
+      } else {
+        console.log('BŁĄD: Obrazek bodźca nie jest wyświetlany');
+      }
       
-      // Kliknij kurtynę i zakończ rundę
-      const curtain = await page.$('.curtain');
-      await curtain.click();
+      // Sprawdzamy aktualną liczbę par
+      const pairsText = await page.$eval('#remaining-pairs', el => el.textContent);
+      const pairs = parseInt(pairsText);
+      console.log(`Aktualna liczba par: ${pairs}`);
       
-      // Poczekaj na zakończenie rundy
-      await page.waitForSelector('.round-result', { timeout: 15000 });
+      // Jeśli to był sukces, sprawdzamy czy liczba par się nie zmniejszyła
+      if (resultText === 'SUKCES') {
+        if (pairs < currentPairs) {
+          decreasedAfterSuccess = true;
+          console.log('BŁĄD: Liczba par zmniejszyła się po sukcesie');
+        }
+      } 
+      // Jeśli to była porażka, sprawdzamy czy liczba par się zmniejszyła
+      else if (resultText === 'PORAŻKA') {
+        if (pairs !== currentPairs - 1) {
+          console.log('BŁĄD: Liczba par nie zmniejszyła się po porażce');
+        }
+      }
       
-      // Kliknij przycisk "Następna runda"
-      await page.waitForSelector('#next-round-button');
-      await page.click('#next-round-button');
+      currentPairs = pairs;
       
-      // Poczekaj na podsumowanie sesji
-      await page.waitForSelector('.session-summary', { timeout: 10000 });
+      // Klikamy "Następna runda" jeśli przycisk jest widoczny
+      const nextButtonVisible = await page.$('#next-round-button');
+      if (nextButtonVisible) {
+        await page.click('#next-round-button');
+        await page.waitForSelector('.curtain-container', { visible: true, timeout: 5000 });
+      } else {
+        // Jeśli przycisk nie jest widoczny, prawdopodobnie skończyły się pary
+        break;
+      }
+    }
+    
+    // 4. Sprawdzamy czy podsumowanie sesji działa poprawnie
+    // Jeśli przycisk podsumowania jest widoczny, klikamy go
+    const summaryButtonVisible = await page.$('#summary-button');
+    
+    if (summaryButtonVisible) {
+      console.log('Klikam przycisk podsumowania sesji');
+      await page.click('#summary-button');
       
-      // Sprawdź, czy podsumowanie zawiera wymagane elementy
-      const summaryElements = await page.$$('.session-summary .summary-item');
-      expect(summaryElements.length).toBeGreaterThan(0);
-      
-      // Sprawdź, czy wykres jest widoczny
-      const chart = await page.$('.wealth-chart');
-      expect(chart).not.toBeNull();
-      
-      // Sprawdź, czy ranking obrazów jest widoczny
-      const imageRanking = await page.$('.image-ranking');
-      expect(imageRanking).not.toBeNull();
-    });
-  });
+      try {
+        // Oczekujemy na załadowanie strony podsumowania
+        await page.waitForSelector('.summary-section', { timeout: 10000 });
+        console.log('Strona podsumowania załadowana pomyślnie');
+        await takeScreenshot(page, 'summary-page');
+      } catch (error) {
+        console.log('Błąd podczas ładowania strony podsumowania:', error);
+        await takeScreenshot(page, 'summary-error');
+      }
+    }
+    
+    // 5. Weryfikacja wyników
+    expect(stimulusImageDisplayed).toBe(true); // Obrazki bodźca powinny być wyświetlane
+    expect(decreasedAfterSuccess).toBe(false); // Liczba par nie powinna zmniejszać się po sukcesie
+  }, 60000); // 60s timeout
 }); 

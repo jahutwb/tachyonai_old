@@ -213,7 +213,7 @@ class Session(BaseModel):
     id: int
     user_id: int
     status: str
-    created_at: datetime
+    created_at: datetime = None
     session_profit_factor: float
     remaining_pairs: int
     pos_pool_json: Optional[List[Any]] = Field(default_factory=list)

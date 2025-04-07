@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 import random
+import logging
+import traceback
 
 from ..database import get_db
 from ..models import User, Session as SessionModel, Round, Image, ImageTypeEnum
@@ -8,6 +10,7 @@ from .. import schemas
 from ..auth import get_current_user
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/rounds/next", response_model=schemas.RoundCreate)
@@ -17,50 +20,89 @@ def get_next_round(
     db: Session = Depends(get_db),
 ):
     """Pobiera następną rundę dla sesji o podanym ID."""
-    # Sprawdź czy sesja istnieje i należy do bieżącego użytkownika
-    session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
-    if not session:
-        raise HTTPException(status_code=404, detail="Sesja nie znaleziona")
-    if session.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Brak dostępu do tej sesji")
-    
-    # Sprawdź, czy sesja jest aktywna
-    if session.status != "ACTIVE":
-        raise HTTPException(status_code=400, detail="Sesja nie jest aktywna")
-    
-    # Sprawdź, czy pozostały jeszcze pary do rozegrania
-    if session.remaining_pairs <= 0:
-        raise HTTPException(status_code=400, detail="Brak dostępnych par w sesji")
-    
-    # Pobierz liczbę rund w sesji, aby ustalić numer rundy
-    round_count = db.query(Round).filter(Round.session_id == session_id).count()
-    round_number = round_count + 1
-    
-    # Uproszczona logika wyboru obrazów - w prawdziwej aplikacji będzie bardziej skomplikowana
-    # Pobierz losowy obraz pozytywny i negatywny
-    pos_images = db.query(Image).filter(Image.type == ImageTypeEnum.POSITIVE).limit(100).all()
-    neg_images = db.query(Image).filter(Image.type == ImageTypeEnum.NEGATIVE).limit(100).all()
-    
-    if not pos_images or not neg_images:
-        raise HTTPException(status_code=500, detail="Brak dostępnych obrazów")
-    
-    pos_image = random.choice(pos_images)
-    neg_image = random.choice(neg_images)
-    
-    # Utwórz nową rundę
-    new_round = Round(
-        session_id=session_id,
-        round_number=round_number,
-        pos_image_id=pos_image.id,
-        neg_image_id=neg_image.id,
-        start_price=50000.0,  # Przykładowa wartość
-    )
-    
-    db.add(new_round)
-    db.commit()
-    db.refresh(new_round)
-    
-    return new_round
+    try:
+        logger.info(f"Pobieranie następnej rundy dla sesji {session_id}")
+        
+        # Sprawdź czy sesja istnieje i należy do bieżącego użytkownika
+        session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
+        if not session:
+            logger.warning(f"Sesja {session_id} nie znaleziona")
+            raise HTTPException(status_code=404, detail="Sesja nie znaleziona")
+        if session.user_id != current_user.id:
+            logger.warning(f"Brak dostępu do sesji {session_id} dla użytkownika {current_user.id}")
+            raise HTTPException(status_code=403, detail="Brak dostępu do tej sesji")
+        
+        # Sprawdź, czy sesja jest aktywna
+        if session.status != "ACTIVE":
+            logger.warning(f"Sesja {session_id} nie jest aktywna - status: {session.status}")
+            raise HTTPException(status_code=400, detail="Sesja nie jest aktywna")
+        
+        # Sprawdź, czy pozostały jeszcze pary do rozegrania
+        if session.remaining_pairs <= 0:
+            logger.warning(f"Brak dostępnych par w sesji {session_id}")
+            raise HTTPException(status_code=400, detail="Brak dostępnych par w sesji")
+        
+        # Pobierz liczbę rund w sesji, aby ustalić numer rundy
+        round_count = db.query(Round).filter(Round.session_id == session_id).count()
+        round_number = round_count + 1
+        logger.info(f"Tworzenie rundy numer {round_number} dla sesji {session_id}")
+        
+        # Pobierz obrazy do rundy
+        try:
+            # Uproszczona logika wyboru obrazów - w prawdziwej aplikacji będzie bardziej skomplikowana
+            # Pobierz losowy obraz pozytywny i negatywny
+            pos_images = db.query(Image).filter(Image.type == ImageTypeEnum.POSITIVE).limit(100).all()
+            neg_images = db.query(Image).filter(Image.type == ImageTypeEnum.NEGATIVE).limit(100).all()
+            
+            if not pos_images or not neg_images:
+                logger.error(f"Brak dostępnych obrazów w bazie danych")
+                raise HTTPException(status_code=500, detail="Brak dostępnych obrazów")
+            
+            pos_image = random.choice(pos_images)
+            neg_image = random.choice(neg_images)
+            
+            logger.info(f"Wybrano obrazy: pos_id={pos_image.id}, neg_id={neg_image.id}")
+        except Exception as e:
+            logger.error(f"Błąd podczas wyboru obrazów: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise HTTPException(status_code=500, detail=f"Błąd podczas wyboru obrazów: {str(e)}")
+        
+        # Losowanie, która strona to kupno (BUY), a która sprzedaż (SELL)
+        left_action = random.choice(["BUY", "SELL"])
+        right_action = "SELL" if left_action == "BUY" else "BUY"
+        logger.info(f"Przypisane akcje: left={left_action}, right={right_action}")
+        
+        # Utwórz nową rundę
+        try:
+            new_round = Round(
+                session_id=session_id,
+                round_number=round_number,
+                pos_image_id=pos_image.id,
+                neg_image_id=neg_image.id,
+                start_price=50000.0,  # Przykładowa wartość
+                left_action=left_action,
+                right_action=right_action
+            )
+            
+            db.add(new_round)
+            db.commit()
+            db.refresh(new_round)
+            logger.info(f"Utworzono nową rundę id={new_round.id} dla sesji {session_id}")
+            
+            return new_round
+        except Exception as db_error:
+            logger.error(f"Błąd bazy danych podczas tworzenia rundy: {str(db_error)}")
+            logger.error(traceback.format_exc())
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"Błąd bazy danych: {str(db_error)}")
+            
+    except HTTPException:
+        # Przepuść wyjątki HTTPException, aby zachować ich szczegóły
+        raise
+    except Exception as e:
+        logger.error(f"Nieoczekiwany błąd w get_next_round: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Nieoczekiwany błąd: {str(e)}")
 
 
 @router.post("/rounds/choice", response_model=schemas.RoundResult)
@@ -80,9 +122,12 @@ def submit_round_choice(
     if not session or session.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Brak dostępu do tej rundy")
     
-    # Uproszczona logika przetwarzania wyboru - w prawdziwej aplikacji będzie bardziej skomplikowana
-    # Symulujemy zmiany ceny i obliczamy zysk
-    user_action = "BUY" if choice.side == "LEFT" else "SELL"
+    # Określ akcję użytkownika na podstawie strony i przypisanej akcji
+    if choice.side == "LEFT":
+        user_action = round_obj.left_action
+    else:  # RIGHT
+        user_action = round_obj.right_action
+        
     start_price = round_obj.start_price
     
     # Dla uproszczenia, losowo generujemy zmianę ceny
@@ -100,6 +145,8 @@ def submit_round_choice(
         profit_fraction = -abs(price_change)
         # Obrazek negatywny
         stimulus_id = round_obj.neg_image_id
+        # Zmniejsz pozostałe pary tylko w przypadku porażki
+        session.remaining_pairs -= 1
     
     # Aktualizacja rundy
     round_obj.user_choice_side = choice.side
@@ -110,7 +157,6 @@ def submit_round_choice(
     
     # Aktualizacja sesji
     session.session_profit_factor *= (1 + profit_fraction)
-    session.remaining_pairs -= 1
     
     if session.remaining_pairs <= 0:
         session.status = "COMPLETED"

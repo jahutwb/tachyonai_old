@@ -8,7 +8,9 @@ const GameState = {
     sessionProfitFactor: 1.0,
     startPrice: 0,
     endPrice: 0,
-    isWaitingForPriceChange: false
+    isWaitingForPriceChange: false,
+    leftAction: null,  // Przechowuje akcję dla lewej kurtyny (BUY/SELL) - ukryta przed użytkownikiem
+    rightAction: null  // Przechowuje akcję dla prawej kurtyny (BUY/SELL) - ukryta przed użytkownikiem
 };
 
 // Pomocnicze funkcje
@@ -55,15 +57,19 @@ function fetchWithAuth(url, options = {}) {
 }
 
 function showSelectPhase() {
-    document.getElementById('game-phase-select').style.display = 'flex';
+    document.getElementById('game-phase-select').style.display = 'block';
     document.getElementById('game-phase-result').style.display = 'none';
     
     // Reset kurtyn
-    const leftCurtain = document.getElementById('left-curtain');
-    const rightCurtain = document.getElementById('right-curtain');
+    document.getElementById('left-curtain').classList.remove('curtain-expanded', 'curtain-hidden');
+    document.getElementById('right-curtain').classList.remove('curtain-expanded', 'curtain-hidden');
     
-    leftCurtain.classList.remove('curtain-expanded', 'curtain-hidden');
-    rightCurtain.classList.remove('curtain-expanded', 'curtain-hidden');
+    // Ukrywamy informacje o akcjach - użytkownik nie powinien widzieć przypisanych akcji
+    const leftActionElement = document.getElementById('left-action');
+    const rightActionElement = document.getElementById('right-action');
+    
+    leftActionElement.style.display = 'none';
+    rightActionElement.style.display = 'none';
 }
 
 function showResultPhase(result, profitFraction, imageUrl) {
@@ -82,8 +88,10 @@ function showResultPhase(result, profitFraction, imageUrl) {
     profitChange.textContent = `${sign}${profitPercent}%`;
     profitChange.className = `profit-change ${profitFraction >= 0 ? 'positive' : 'negative'}`;
     
-    // Ustawienie obrazu
-    document.getElementById('stimulus-image').src = imageUrl;
+    // Ustawienie obrazu - upewnij się, że URL jest poprawny
+    const absoluteImageUrl = imageUrl.startsWith('/') ? imageUrl : `/${imageUrl}`;
+    console.log('Ładowanie obrazu z URL:', absoluteImageUrl);
+    document.getElementById('stimulus-image').src = absoluteImageUrl;
     
     // Przyciski
     if (GameState.remainingPairs > 0) {
@@ -180,6 +188,12 @@ async function loadNextRound() {
         const roundData = await response.json();
         GameState.currentRound = roundData;
         
+        // Przypisanie akcji do kurtyn na podstawie danych z serwera
+        GameState.leftAction = roundData.left_action;
+        GameState.rightAction = roundData.right_action;
+        
+        console.log(`Lewa kurtyna: ${GameState.leftAction}, Prawa kurtyna: ${GameState.rightAction}`);
+        
         // Przejście do fazy wyboru
         showSelectPhase();
         
@@ -230,6 +244,8 @@ async function selectCurtain(side) {
         GameState.endPrice = resultData.end_price;
         GameState.remainingPairs = resultData.remaining_pairs;
         GameState.sessionProfitFactor = resultData.session_profit_factor;
+        
+        console.log('Odpowiedź z serwera:', resultData);
         
         if (resultData.result === 'SUCCESS') {
             GameState.successes++;

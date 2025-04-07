@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TachyonAI - Podsumowanie Sesji</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-logo">
+            <a href="/">TachyonAI</a>
+        </div>
+        <div class="navbar-menu">
+            <a href="/" class="navbar-item">Strona Startowa</a>
+            <a href="/stats" class="navbar-item">Statystyki Użytkownika</a>
+            <div class="navbar-auth">
+                <span id="username-display"></span>
+                <button id="logout-button" class="button">Wyloguj</button>
+            </div>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <div class="summary-container">
+            <h1>Podsumowanie Sesji</h1>
+            
+            <div class="summary-section">
+                <h2>Statystyki Sesji</h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div id="session-successes" class="stat-value accent">0</div>
+                        <div class="stat-label">Sukcesów</div>
+                    </div>
+                    <div class="stat-card">
+                        <div id="session-failures" class="stat-value accent">0</div>
+                        <div class="stat-label">Porażek</div>
+                    </div>
+                    <div class="stat-card">
+                        <div id="session-difference" class="stat-value accent">0</div>
+                        <div class="stat-label">Różnica</div>
+                    </div>
+                    <div class="stat-card">
+                        <div id="session-success-rate" class="stat-value accent">0%</div>
+                        <div class="stat-label">Skuteczność</div>
+                    </div>
+                    <div class="stat-card">
+                        <div id="session-profit" class="stat-value accent">0%</div>
+                        <div class="stat-label">Zysk</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="summary-section">
+                <h2>Przebieg Bogactwa</h2>
+                <div class="chart-container">
+                    <canvas id="wealth-chart"></canvas>
+                </div>
+            </div>
+            
+            <div class="summary-section">
+                <h2>Ranking Bodźców Pozytywnych</h2>
+                <div id="positive-stimulus-ranking" class="ranking-container">
+                    <!-- Tutaj będą dodawane elementy rankingu -->
+                </div>
+            </div>
+            
+            <div class="summary-section">
+                <button id="show-details-button" class="button secondary-button">Szczegółowy przebieg rund</button>
+                <div id="rounds-details" class="details-container" style="display: none;">
+                    <table class="details-table">
+                        <thead>
+                            <tr>
+                                <th>Nr</th>
+                                <th>Data/Czas</th>
+                                <th>Obraz + ID</th>
+                                <th>Obraz - ID</th>
+                                <th>Wybór</th>
+                                <th>Zmiana %</th>
+                                <th>Wynik</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rounds-details-body">
+                            <!-- Tutaj będą dodawane wiersze z detalami rund -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div class="summary-actions">
+                <button id="new-session-button" class="button primary-button">Nowa sesja</button>
+            </div>
+        </div>
+    </main>
+
+    <div id="loading-overlay" class="overlay" style="display: none;">
+        <div class="spinner"></div>
+        <p id="loading-message">Generowanie nowej sesji...</p>
+    </div>
+
+    <script src="{{ url_for('static', path='/js/auth.js') }}"></script>
+    <script src="{{ url_for('static', path='/js/summary.js') }}"></script>
+</body>
+</html> 

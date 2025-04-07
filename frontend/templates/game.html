@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TachyonAI - Rozgrywka</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-logo">
+            <a href="/">TachyonAI</a>
+        </div>
+        <div class="navbar-menu">
+            <a href="/" class="navbar-item">Strona Startowa</a>
+            <a href="/stats" class="navbar-item">Statystyki Użytkownika</a>
+            <div class="navbar-auth">
+                <span id="username-display"></span>
+                <button id="logout-button" class="button">Wyloguj</button>
+            </div>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <div id="game-phase-select" class="game-container">
+            <div class="curtain-container">
+                <div id="left-curtain" class="curtain">
+                    <div class="curtain-content">
+                        <div class="curtain-text">LEWA</div>
+                        <div class="action-text" id="left-action" style="display: none;"></div>
+                    </div>
+                </div>
+                <div id="right-curtain" class="curtain">
+                    <div class="curtain-content">
+                        <div class="curtain-text">PRAWA</div>
+                        <div class="action-text" id="right-action" style="display: none;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="game-phase-result" class="result-container" style="display: none;">
+            <div class="result-header">
+                <div id="result-status" class="result-status"></div>
+                <div id="profit-change" class="profit-change"></div>
+            </div>
+            <div class="stimulus-container">
+                <img id="stimulus-image" class="stimulus-image" src="" alt="Bodziec">
+            </div>
+            <div class="next-actions">
+                <button id="next-round-button" class="button primary-button">Następna runda</button>
+                <button id="summary-button" class="button secondary-button" style="display: none;">Podsumowanie sesji</button>
+            </div>
+        </div>
+    </main>
+
+    <div class="stats-bar">
+        <div class="stat-item">
+            <div id="success-count" class="stat-value">0</div>
+            <div class="stat-label">Sukcesów</div>
+        </div>
+        <div class="stat-item">
+            <div id="failure-count" class="stat-value">0</div>
+            <div class="stat-label">Porażek</div>
+        </div>
+        <div class="stat-item">
+            <div id="success-rate" class="stat-value">0%</div>
+            <div class="stat-label">Skuteczność</div>
+        </div>
+        <div class="stat-item">
+            <div id="profit-factor" class="stat-value">0%</div>
+            <div class="stat-label">Zysk</div>
+        </div>
+        <div class="stat-item">
+            <div id="remaining-pairs" class="stat-value">6</div>
+            <div class="stat-label">Pary w puli</div>
+        </div>
+    </div>
+
+    <div id="loading-overlay" class="overlay" style="display: none;">
+        <div class="spinner"></div>
+        <p id="loading-message">Ładowanie...</p>
+    </div>
+
+    <script src="{{ url_for('static', path='/js/auth.js') }}"></script>
+    <script src="{{ url_for('static', path='/js/game.js') }}"></script>
+</body>
+</html> 
