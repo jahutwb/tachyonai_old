@@ -10,8 +10,27 @@ const GameState = {
     endPrice: 0,
     isWaitingForPriceChange: false,
     leftAction: null,  // Przechowuje akcję dla lewej kurtyny (BUY/SELL) - ukryta przed użytkownikiem
-    rightAction: null  // Przechowuje akcję dla prawej kurtyny (BUY/SELL) - ukryta przed użytkownikiem
+    rightAction: null, // Przechowuje akcję dla prawej kurtyny (BUY/SELL) - ukryta przed użytkownikiem
+    profit_fraction: 0
 };
+
+// Funkcja diagnostyczna do logowania stanu aplikacji
+function logAppState(action) {
+    console.group(`App State - ${action}`);
+    console.log(`Session ID: ${GameState.sessionId}`);
+    console.log(`Current Round: ${GameState.currentRound ? GameState.currentRound.id : 'none'}`);
+    console.log(`Successes: ${GameState.successes}`);
+    console.log(`Failures: ${GameState.failures}`);
+    console.log(`Remaining Pairs: ${GameState.remainingPairs}`);
+    console.log(`Session Profit Factor: ${GameState.sessionProfitFactor}`);
+    console.log(`Start Price: ${GameState.startPrice}`);
+    console.log(`End Price: ${GameState.endPrice}`);
+    console.log(`Is Waiting For Price Change: ${GameState.isWaitingForPriceChange}`);
+    console.log(`Left Action: ${GameState.leftAction}`);
+    console.log(`Right Action: ${GameState.rightAction}`);
+    console.log(`JWT Token: ${localStorage.getItem('token') ? 'Present' : 'Missing'}`);
+    console.groupEnd();
+}
 
 // Pomocnicze funkcje
 function updateStatsView() {
@@ -75,72 +94,135 @@ function showSelectPhase() {
 async function showResultPhase(result, stimulusUrl) {
     console.log(`Wyświetlam fazę wynikową: ${result}, URL bodźca: ${stimulusUrl}`);
     
-    // Ukryj fazę wyboru
-    document.querySelector('.game-phase-select').style.display = 'none';
-    
-    // Pokaż fazę wyniku
-    const resultPhase = document.querySelector('.game-phase-result');
-    resultPhase.style.display = 'block';
-    
-    // Ustaw tekst wyniku
-    const resultText = document.getElementById('result-text');
-    resultText.textContent = result === 'SUCCESS' ? 'SUKCES!' : 'PORAŻKA!';
-    resultText.className = result === 'SUCCESS' ? 'success' : 'failure';
-    
-    // Załaduj obraz bodźca
-    const stimulusImage = document.getElementById('stimulus-image');
-    
-    if (stimulusUrl) {
-        console.log(`Ładowanie obrazu z URL: ${stimulusUrl}`);
+    try {
+        // Ukryj fazę wyboru - poprawiony selektor z .game-phase-select na #game-phase-select
+        const selectPhaseElement = document.getElementById('game-phase-select');
+        if (!selectPhaseElement) {
+            console.error('Element #game-phase-select nie został znaleziony');
+            // Próba alternatywnego selektora jako ostateczna próba
+            const altSelectPhase = document.querySelector('.game-container');
+            if (altSelectPhase) {
+                console.log('Znaleziono alternatywny element .game-container');
+                altSelectPhase.style.display = 'none';
+            } else {
+                console.error('Alternatywny element .game-container również nie został znaleziony');
+            }
+        } else {
+            selectPhaseElement.style.display = 'none';
+        }
         
-        try {
-            // Pobierz token z localStorage
-            const token = localStorage.getItem('token');
+        // Pokaż fazę wyniku
+        const resultPhase = document.getElementById('game-phase-result');
+        if (!resultPhase) {
+            console.error('Element #game-phase-result nie został znaleziony');
+            return;  // Przerwij wykonanie jeśli nie znaleziono elementu
+        }
+        resultPhase.style.display = 'block';
+        
+        // Ustaw tekst wyniku - element w HTML to result-status, nie result-text
+        const resultText = document.getElementById('result-status');
+        if (!resultText) {
+            console.error('Element #result-status nie został znaleziony');
+        } else {
+            resultText.textContent = result === 'SUCCESS' ? 'SUKCES!' : 'PORAŻKA!';
+            resultText.className = result === 'SUCCESS' ? 'success' : 'failure';
+        }
+        
+        // Wyświetl informacje o zmianie zysku
+        const profitChangeElement = document.getElementById('profit-change');
+        if (profitChangeElement) {
+            // Użyj wartości z odpowiedzi serwera zamiast GameState.profit_fraction
+            const profitFraction = GameState.endPrice ? 
+                (GameState.endPrice - GameState.startPrice) / GameState.startPrice : 0;
             
-            if (!token) {
-                console.error('Brak tokenu autoryzacyjnego w localStorage');
-                return;
-            }
+            const profitValue = profitFraction != 0 ? 
+                (profitFraction > 0 ? `+${(profitFraction * 100).toFixed(2)}%` : `${(profitFraction * 100).toFixed(2)}%`) :
+                '0.00%';
             
-            // Ustaw na początku placeholder lub ukryj obraz
-            stimulusImage.src = '';
-            stimulusImage.style.display = 'none';
+            profitChangeElement.textContent = profitValue;
+            profitChangeElement.className = profitFraction > 0 ? 'positive' : 'negative';
+        } else {
+            console.error('Element #profit-change nie został znaleziony');
+        }
+        
+        // Zarządzanie przyciskami w zależności od pozostałych par
+        const nextRoundButton = document.getElementById('next-round-button');
+        const summaryButton = document.getElementById('summary-button');
+        
+        if (GameState.remainingPairs <= 0) {
+            // Ostatnia runda - pokaż tylko przycisk podsumowania
+            if (nextRoundButton) nextRoundButton.style.display = 'none';
+            if (summaryButton) summaryButton.style.display = 'inline-block';
+            console.log('Ostatnia runda - wyświetlam tylko przycisk podsumowania');
+        } else {
+            // Normalna runda - pokaż przycisk następnej rundy, ukryj podsumowanie
+            if (nextRoundButton) nextRoundButton.style.display = 'inline-block';
+            if (summaryButton) summaryButton.style.display = 'none';
+            console.log(`Pozostało par: ${GameState.remainingPairs} - wyświetlam przycisk następnej rundy`);
+        }
+        
+        // Załaduj obraz bodźca
+        const stimulusImage = document.getElementById('stimulus-image');
+        if (!stimulusImage) {
+            console.error('Element #stimulus-image nie został znaleziony');
+            return;
+        }
+        
+        if (stimulusUrl) {
+            console.log(`Ładowanie obrazu z URL: ${stimulusUrl}`);
             
-            // Pobierz obraz z uwzględnieniem autoryzacji
-            const response = await fetch(stimulusUrl, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${token}`
+            try {
+                // Pobierz token z localStorage
+                const token = localStorage.getItem('token');
+                
+                if (!token) {
+                    console.error('Brak tokenu autoryzacyjnego w localStorage');
+                    return;
                 }
-            });
-            
-            if (!response.ok) {
-                throw new Error(`Błąd pobierania obrazu: ${response.status} ${response.statusText}`);
-            }
-            
-            // Konwertuj odpowiedź na blob i utwórz URL
-            const blob = await response.blob();
-            const imageUrl = URL.createObjectURL(blob);
-            
-            // Ustaw obraz
-            stimulusImage.onload = function() {
-                stimulusImage.style.display = 'block';
-                console.log('Obraz bodźca załadowany pomyślnie');
-            };
-            
-            stimulusImage.onerror = function() {
-                console.error('Błąd ładowania obrazu bodźca');
+                
+                // Ustaw na początku placeholder lub ukryj obraz
+                stimulusImage.src = '';
                 stimulusImage.style.display = 'none';
-            };
-            
-            stimulusImage.src = imageUrl;
-        } catch (error) {
-            console.error('Błąd podczas ładowania obrazu bodźca:', error);
+                
+                // Pobierz obraz z uwzględnieniem autoryzacji
+                const response = await fetch(stimulusUrl, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Błąd pobierania obrazu: ${response.status} ${response.statusText}`);
+                }
+                
+                // Konwertuj odpowiedź na blob i utwórz URL
+                const blob = await response.blob();
+                const imageUrl = URL.createObjectURL(blob);
+                
+                // Ustaw obraz
+                stimulusImage.onload = function() {
+                    stimulusImage.style.display = 'block';
+                    console.log('Obraz bodźca załadowany pomyślnie');
+                };
+                
+                stimulusImage.onerror = function() {
+                    console.error('Błąd ładowania obrazu bodźca');
+                    stimulusImage.style.display = 'none';
+                };
+                
+                stimulusImage.src = imageUrl;
+            } catch (error) {
+                console.error('Błąd podczas ładowania obrazu bodźca:', error);
+                stimulusImage.style.display = 'none';
+            }
+        } else {
+            console.warn('Brak URL obrazu bodźca');
             stimulusImage.style.display = 'none';
         }
-    } else {
-        console.warn('Brak URL obrazu bodźca');
-        stimulusImage.style.display = 'none';
+    } catch (error) {
+        console.error('Błąd wyświetlania fazy wynikowej:', error);
+        hideLoadingOverlay();
     }
 }
 
@@ -165,6 +247,7 @@ async function initGame() {
         // Załaduj pierwszą rundę
         await loadNextRound();
         
+        logAppState('Inicjalizacja gry zakończona');
         hideLoadingOverlay();
     } catch (error) {
         console.error('Błąd inicjalizacji gry:', error);
@@ -220,6 +303,8 @@ async function loadNextRound() {
     showLoadingOverlay('Przygotowanie rundy...');
     
     try {
+        logAppState('Przed załadowaniem nowej rundy');
+        
         const response = await fetchWithAuth(`/api/rounds/next?session_id=${GameState.sessionId}`);
         
         if (!response.ok) {
@@ -238,6 +323,7 @@ async function loadNextRound() {
         // Przejście do fazy wyboru
         showSelectPhase();
         
+        logAppState('Po załadowaniu nowej rundy');
         hideLoadingOverlay();
     } catch (error) {
         console.error('Błąd ładowania rundy:', error);
@@ -246,71 +332,98 @@ async function loadNextRound() {
     }
 }
 
+// Inicjalizacja i przetwarzanie wyboru kurtyny
 async function selectCurtain(side) {
-    if (GameState.isWaitingForPriceChange) return;
+    console.log(`Wybrano kurtynę: ${side}`);
+    if (GameState.isWaitingForPriceChange) {
+        console.warn('Już oczekujemy na zmianę ceny, ignoruję kliknięcie');
+        return;
+    }
     
+    // Rozwiń wybraną kurtynę i ukryj drugą
     const leftCurtain = document.getElementById('left-curtain');
     const rightCurtain = document.getElementById('right-curtain');
     
-    // Animacja kurtyn
     if (side === 'LEFT') {
         leftCurtain.classList.add('curtain-expanded');
         rightCurtain.classList.add('curtain-hidden');
     } else {
-        leftCurtain.classList.add('curtain-hidden');
         rightCurtain.classList.add('curtain-expanded');
+        leftCurtain.classList.add('curtain-hidden');
     }
     
-    showLoadingOverlay('Oczekiwanie na zmianę ceny...');
+    // Zapamiętaj cenę początkową
+    GameState.startPrice = await getCurrentPrice();
     GameState.isWaitingForPriceChange = true;
     
+    console.log(`Cena początkowa: ${GameState.startPrice}`);
+    
     try {
+        // Wyślij wybór do serwera
         const response = await fetchWithAuth(`/api/rounds/choice`, {
             method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
             body: JSON.stringify({
-                session_id: GameState.sessionId,
                 round_id: GameState.currentRound.id,
+                session_id: GameState.sessionId,
                 side: side
             })
         });
         
         if (!response.ok) {
-            throw new Error('Błąd przetwarzania wyboru');
+            throw new Error(`Błąd przy wysyłaniu wyboru: ${response.status} ${response.statusText}`);
         }
         
-        const resultData = await response.json();
+        // Przetwórz odpowiedź od serwera
+        const result = await response.json();
+        console.log('Odpowiedź z serwera po wyborze:', result);
         
-        // Aktualizacja stanu
-        GameState.startPrice = resultData.start_price;
-        GameState.endPrice = resultData.end_price;
-        GameState.remainingPairs = resultData.remaining_pairs;
-        GameState.sessionProfitFactor = resultData.session_profit_factor;
+        // TUTAJ AKTUALIZUJEMY WAŻNE POLA Z ODPOWIEDZI SERWERA
+        // Zapisz ważne wartości z odpowiedzi serwera
+        GameState.endPrice = result.end_price;
+        GameState.profit_fraction = result.profit_fraction;
         
-        console.log('Odpowiedź z serwera:', resultData);
-        
-        if (resultData.result === 'SUCCESS') {
+        // Aktualizacja statystyk sesji
+        if (result.result === 'SUCCESS') {
             GameState.successes++;
-            // Pokaż pozytywny bodziec
-            await showResultPhase('SUCCESS', resultData.stimulus_url);
+            GameState.sessionProfitFactor *= (1 + result.profit_fraction);
         } else {
             GameState.failures++;
-            // Pokaż negatywny bodziec
-            await showResultPhase('FAILURE', resultData.stimulus_url);
+            GameState.sessionProfitFactor *= (1 + result.profit_fraction);
+            // W przypadku porażki zmniejszamy liczbę pozostałych par
+            GameState.remainingPairs--;
         }
         
         // Aktualizacja widoku statystyk
         updateStatsView();
         
-        GameState.isWaitingForPriceChange = false;
-        hideLoadingOverlay();
-    } catch (error) {
-        console.error('Błąd wyboru:', error);
-        alert(`Błąd: ${error.message}`);
-        GameState.isWaitingForPriceChange = false;
-        hideLoadingOverlay();
+        // Wyświetl wynik - korzystamy z URL stimulus_url z odpowiedzi serwera
+        let stimulusUrl = '';
+        if (result.result === 'SUCCESS') {
+            // W przypadku sukcesu pokazujemy pozytywny bodziec
+            stimulusUrl = `/api/images/${GameState.currentRound.pos_image_id}`;
+        } else {
+            // W przypadku porażki pokazujemy negatywny bodziec
+            stimulusUrl = `/api/images/${GameState.currentRound.neg_image_id}`;
+        }
         
-        // Przywróć stan początkowy (reset animacji kurtyn)
-        showSelectPhase();
+        // Aktualizacja logu stanu
+        logAppState(`Po rundzie - wynik: ${result.result}`);
+        
+        // Poczekaj chwilę i pokaż wynik
+        setTimeout(() => {
+            showResultPhase(result.result, stimulusUrl);
+            GameState.isWaitingForPriceChange = false;
+            hideLoadingOverlay();
+        }, 1000);
+        
+    } catch (error) {
+        console.error('Błąd podczas przetwarzania wyboru:', error);
+        GameState.isWaitingForPriceChange = false;
+        hideLoadingOverlay();
+        alert(`Wystąpił błąd podczas przetwarzania wyboru: ${error.message}`);
     }
 }
 
