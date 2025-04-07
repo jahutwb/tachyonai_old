@@ -72,34 +72,75 @@ function showSelectPhase() {
     rightActionElement.style.display = 'none';
 }
 
-function showResultPhase(result, profitFraction, imageUrl) {
-    document.getElementById('game-phase-select').style.display = 'none';
-    document.getElementById('game-phase-result').style.display = 'block';
+async function showResultPhase(result, stimulusUrl) {
+    console.log(`Wyświetlam fazę wynikową: ${result}, URL bodźca: ${stimulusUrl}`);
     
-    // Ustawienie rezultatu
-    const resultStatus = document.getElementById('result-status');
-    resultStatus.textContent = result === 'SUCCESS' ? 'SUKCES' : 'PORAŻKA';
-    resultStatus.className = `result-status ${result.toLowerCase()}`;
+    // Ukryj fazę wyboru
+    document.querySelector('.game-phase-select').style.display = 'none';
     
-    // Ustawienie zmiany zysku
-    const profitChange = document.getElementById('profit-change');
-    const profitPercent = (profitFraction * 100).toFixed(2);
-    const sign = profitFraction >= 0 ? '+' : '';
-    profitChange.textContent = `${sign}${profitPercent}%`;
-    profitChange.className = `profit-change ${profitFraction >= 0 ? 'positive' : 'negative'}`;
+    // Pokaż fazę wyniku
+    const resultPhase = document.querySelector('.game-phase-result');
+    resultPhase.style.display = 'block';
     
-    // Ustawienie obrazu - upewnij się, że URL jest poprawny
-    const absoluteImageUrl = imageUrl.startsWith('/') ? imageUrl : `/${imageUrl}`;
-    console.log('Ładowanie obrazu z URL:', absoluteImageUrl);
-    document.getElementById('stimulus-image').src = absoluteImageUrl;
+    // Ustaw tekst wyniku
+    const resultText = document.getElementById('result-text');
+    resultText.textContent = result === 'SUCCESS' ? 'SUKCES!' : 'PORAŻKA!';
+    resultText.className = result === 'SUCCESS' ? 'success' : 'failure';
     
-    // Przyciski
-    if (GameState.remainingPairs > 0) {
-        document.getElementById('next-round-button').style.display = 'block';
-        document.getElementById('summary-button').style.display = 'none';
+    // Załaduj obraz bodźca
+    const stimulusImage = document.getElementById('stimulus-image');
+    
+    if (stimulusUrl) {
+        console.log(`Ładowanie obrazu z URL: ${stimulusUrl}`);
+        
+        try {
+            // Pobierz token z localStorage
+            const token = localStorage.getItem('token');
+            
+            if (!token) {
+                console.error('Brak tokenu autoryzacyjnego w localStorage');
+                return;
+            }
+            
+            // Ustaw na początku placeholder lub ukryj obraz
+            stimulusImage.src = '';
+            stimulusImage.style.display = 'none';
+            
+            // Pobierz obraz z uwzględnieniem autoryzacji
+            const response = await fetch(stimulusUrl, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Błąd pobierania obrazu: ${response.status} ${response.statusText}`);
+            }
+            
+            // Konwertuj odpowiedź na blob i utwórz URL
+            const blob = await response.blob();
+            const imageUrl = URL.createObjectURL(blob);
+            
+            // Ustaw obraz
+            stimulusImage.onload = function() {
+                stimulusImage.style.display = 'block';
+                console.log('Obraz bodźca załadowany pomyślnie');
+            };
+            
+            stimulusImage.onerror = function() {
+                console.error('Błąd ładowania obrazu bodźca');
+                stimulusImage.style.display = 'none';
+            };
+            
+            stimulusImage.src = imageUrl;
+        } catch (error) {
+            console.error('Błąd podczas ładowania obrazu bodźca:', error);
+            stimulusImage.style.display = 'none';
+        }
     } else {
-        document.getElementById('next-round-button').style.display = 'none';
-        document.getElementById('summary-button').style.display = 'block';
+        console.warn('Brak URL obrazu bodźca');
+        stimulusImage.style.display = 'none';
     }
 }
 
@@ -250,11 +291,11 @@ async function selectCurtain(side) {
         if (resultData.result === 'SUCCESS') {
             GameState.successes++;
             // Pokaż pozytywny bodziec
-            showResultPhase('SUCCESS', resultData.profit_fraction, resultData.stimulus_url);
+            await showResultPhase('SUCCESS', resultData.stimulus_url);
         } else {
             GameState.failures++;
             // Pokaż negatywny bodziec
-            showResultPhase('FAILURE', resultData.profit_fraction, resultData.stimulus_url);
+            await showResultPhase('FAILURE', resultData.stimulus_url);
         }
         
         // Aktualizacja widoku statystyk
