@@ -417,7 +417,8 @@ function preparePositiveStimuliList(sessionData, rounds) {
     // Sortowanie rund według numeru rundy
     const sortedRounds = [...rounds].sort((a, b) => a.round_number - b.round_number);
     
-    // Najpierw zbierz wszystkie unikalne pozytywne bodźce
+    // WAŻNE: Przejdź przez WSZYSTKIE rundy, a nie tylko te z sukcesem
+    // Zbieramy wszystkie unikalne ID pozytywnych bodźców z wszystkich rund
     sortedRounds.forEach(round => {
         const posId = round.pos_image_id;
         
@@ -460,30 +461,37 @@ function preparePositiveStimuliList(sessionData, rounds) {
         }
     }
     
-    // Na koniec przejdź przez rundy i zaktualizuj liczniki sukcesów/porażek i współczynniki zysku
+    // Przejdź przez rundy i zaktualizuj liczniki sukcesów/porażek i współczynniki zysku
+    // WAŻNE: W przypadku SUKCESu aktualizujemy również profit_factor
     sortedRounds.forEach(round => {
         const posId = round.pos_image_id;
         if (stimuliMap.has(posId)) {
             const stimulus = stimuliMap.get(posId);
             stimulus.rounds_participated += 1;
             
-            // Zaktualizuj liczniki sukcesów/porażek
+            // WAŻNE: Współczynnik zysku aktualizujemy TYLKO dla rund z sukcesem!
             if (round.result === 'SUCCESS') {
+                // Inkrementuj licznik sukcesów
                 stimulus.total_successes += 1;
+                
+                // Aktualizacja współczynnika zysku - tylko dla sukcesów!
+                stimulus.total_profit_factor *= (1 + round.profit_fraction);
+                
+                console.log(`Bodziec #${posId}: Sukces w rundzie ${round.round_number}, nowy profit_factor: ${stimulus.total_profit_factor.toFixed(4)}`);
             } else {
                 stimulus.total_failures += 1;
             }
-            
-            // Aktualizacja współczynnika zysku - mnożymy przez (1 + profit_fraction)
-            stimulus.total_profit_factor *= (1 + round.profit_fraction);
         }
     });
     
     // Konwersja mapy na listę
     const stimuliList = Array.from(stimuliMap.values());
     
+    // WAŻNE: Filtrujemy tylko bodźce z przynajmniej jednym sukcesem!
+    const successfulStimuli = stimuliList.filter(stimulus => stimulus.total_successes > 0);
+    
     // Sortowanie według liczby sukcesów (malejąco)
-    stimuliList.sort((a, b) => {
+    successfulStimuli.sort((a, b) => {
         // Najpierw porównaj liczbę sukcesów
         if (b.total_successes !== a.total_successes) {
             return b.total_successes - a.total_successes;
@@ -492,8 +500,12 @@ function preparePositiveStimuliList(sessionData, rounds) {
         return b.total_profit_factor - a.total_profit_factor;
     });
     
-    console.log('Przygotowano ranking bodźców:', stimuliList);
-    return stimuliList;
+    console.log('Przygotowano ranking bodźców (tylko z sukcesami):', successfulStimuli.length);
+    successfulStimuli.forEach(s => {
+        console.log(`Bodziec #${s.id}: ${s.total_successes} sukcesów, profit: ${((s.total_profit_factor - 1) * 100).toFixed(2)}%`);
+    });
+    
+    return successfulStimuli;
 }
 
 // Funkcja ładująca podsumowanie sesji
@@ -747,21 +759,32 @@ function renderWealthChart(rounds) {
     
     console.log('Generowanie wykresu bogactwa z', rounds.length, 'rund');
     
-    // Sortowanie rund według numeru rundy (na wszelki wypadek)
+    // Sortowanie rund według numeru rundy (bardzo ważne!)
     const sortedRounds = [...rounds].sort((a, b) => a.round_number - b.round_number);
     
     // Przygotowanie danych
     const labels = sortedRounds.map((round) => `Runda ${round.round_number}`);
     const wealthData = [];
+    const dataPoints = [];
     let cumulativeWealth = 1.0; // Zaczynamy od 1.0 (100%)
     
     // Generowanie punktów wykresu
     for (const round of sortedRounds) {
         cumulativeWealth *= (1 + round.profit_fraction);
-        wealthData.push((cumulativeWealth - 1) * 100); // Konwersja na procenty
+        const percentChange = (cumulativeWealth - 1) * 100; // Konwersja na procenty
+        wealthData.push(percentChange);
+        dataPoints.push({
+            round: round.round_number,
+            profit: round.profit_fraction,
+            cumulative: cumulativeWealth,
+            percent: percentChange
+        });
     }
     
-    console.log('Skumulowane zyski dla każdej rundy:', wealthData);
+    console.log('Dane wykresu bogactwa:');
+    dataPoints.forEach(point => {
+        console.log(`Runda ${point.round}: Zysk ${(point.profit*100).toFixed(2)}%, Skumulowany ${point.percent.toFixed(2)}%`);
+    });
     
     // Tworzenie wykresu za pomocą Chart.js
     const ctx = document.getElementById('wealth-chart');
@@ -769,6 +792,17 @@ function renderWealthChart(rounds) {
     if (!ctx) {
         console.error('Nie znaleziono elementu canvas do wykresu bogactwa');
         return;
+    }
+    
+    // Najpierw sprawdźmy, czy element canvas faktycznie istnieje w DOM
+    if (!document.contains(ctx)) {
+        console.error('Element canvas istnieje, ale nie jest w DOM');
+        return;
+    }
+    
+    // Sprawdźmy również, czy canvas ma wymiary
+    if (ctx.width === 0 || ctx.height === 0) {
+        console.warn('Canvas ma zerowe wymiary, wykres może się nie wyświetlić poprawnie');
     }
     
     const ctxContext = ctx.getContext('2d');
