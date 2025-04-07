@@ -451,9 +451,18 @@ async function loadSessionSummary(sessionId) {
                 console.log('Pobrano podsumowanie sesji:', sessionSummary);
             }
             
-            // Renderowanie danych
-            renderSessionStats(sessionSummary);
-            renderWealthChart(sessionRounds);
+            // Renderowanie danych - sprawdzamy czy elementy istnieją przed renderowaniem
+            if (sessionStatsContainer) {
+                renderSessionStats(sessionSummary);
+            } else {
+                console.error('Element sessionStatsContainer nie istnieje - nie można renderować statystyk sesji');
+            }
+            
+            if (document.getElementById('wealth-chart')) {
+                renderWealthChart(sessionRounds);
+            } else {
+                console.error('Element wealth-chart nie istnieje - nie można renderować wykresu bogactwa');
+            }
             
             // Bezpieczne renderowanie rankingów, jeśli są dostępne
             const posRankingElement = document.getElementById('positive-stimulus-ranking');
@@ -476,9 +485,15 @@ async function loadSessionSummary(sessionId) {
                     console.log('Brak danych rankingowych dla bodźców negatywnych');
                     negRankingElement.innerHTML = '<p>Brak danych dla rankingu bodźców negatywnych</p>';
                 }
+            } else {
+                console.error('Element neg-stimuli-ranking nie istnieje w dokumencie');
             }
             
-            renderRoundsDetails(sessionRounds);
+            if (roundsTable) {
+                renderRoundsDetails(sessionRounds);
+            } else {
+                console.error('Element roundsTable nie istnieje - nie można renderować szczegółów rund');
+            }
             
         } catch (summaryError) {
             console.error('Błąd przetwarzania podsumowania:', summaryError);
@@ -495,10 +510,20 @@ async function loadSessionSummary(sessionId) {
                 round_count: sessionRounds.length
             };
             
-            renderSessionStats(fallbackSummary);
-            renderWealthChart(sessionRounds);
-            renderRoundsDetails(sessionRounds);
+            // Sprawdzamy czy elementy istnieją przed renderowaniem
+            if (sessionStatsContainer) {
+                renderSessionStats(fallbackSummary);
+            }
             
+            if (document.getElementById('wealth-chart')) {
+                renderWealthChart(sessionRounds);
+            }
+            
+            if (roundsTable) {
+                renderRoundsDetails(sessionRounds);
+            }
+            
+            // Próba renderowania pustych rankingów
             const posRankingElement = document.getElementById('positive-stimulus-ranking');
             if (posRankingElement) {
                 posRankingElement.innerHTML = '<p>Nie udało się załadować rankingu bodźców pozytywnych</p>';
@@ -531,9 +556,18 @@ async function loadSessionSummary(sessionId) {
                 round_count: sessionRounds.length
             };
             
-            renderSessionStats(fallbackSummary);
-            renderWealthChart(sessionRounds);
-            renderRoundsDetails(sessionRounds);
+            // Sprawdzamy czy elementy istnieją przed renderowaniem
+            if (sessionStatsContainer) {
+                renderSessionStats(fallbackSummary);
+            }
+            
+            if (document.getElementById('wealth-chart')) {
+                renderWealthChart(sessionRounds);
+            }
+            
+            if (roundsTable) {
+                renderRoundsDetails(sessionRounds);
+            }
         }
     }
 }
@@ -542,11 +576,21 @@ async function loadSessionSummary(sessionId) {
 function renderSessionStats(summary) {
     if (!summary) {
         console.error('Brak danych podsumowania do renderowania statystyk');
-        sessionStatsContainer.innerHTML = '<div class="error-message">Nie można wyświetlić statystyk - brak danych.</div>';
+        if (sessionStatsContainer) {
+            sessionStatsContainer.innerHTML = '<div class="error-message">Nie można wyświetlić statystyk - brak danych.</div>';
+        } else {
+            console.error('Element sessionStatsContainer nie istnieje w dokumencie');
+        }
         return;
     }
     
     console.log('Renderowanie statystyk sesji:', summary);
+    
+    // Sprawdzenie czy kontener statystyk istnieje
+    if (!sessionStatsContainer) {
+        console.error('Element sessionStatsContainer nie istnieje w dokumencie');
+        return;
+    }
     
     // Obliczenie podstawowych statystyk z dostępnych danych
     const totalRounds = summary.round_count || sessionRounds.length || 0;
