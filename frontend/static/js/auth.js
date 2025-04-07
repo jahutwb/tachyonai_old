@@ -53,16 +53,17 @@ function updateAuthView() {
     const logoutButton = document.getElementById('logout-button');
     const usernameDisplay = document.getElementById('username-display');
 
+    // Sprawdź czy elementy istnieją zanim spróbujesz użyć ich właściwości
     if (isLoggedIn()) {
-        loginButton.style.display = 'none';
-        registerButton.style.display = 'none';
-        logoutButton.style.display = 'inline-block';
-        usernameDisplay.textContent = `Witaj, ${getUsername()}!`;
+        if (loginButton) loginButton.style.display = 'none';
+        if (registerButton) registerButton.style.display = 'none';
+        if (logoutButton) logoutButton.style.display = 'inline-block';
+        if (usernameDisplay) usernameDisplay.textContent = `Witaj, ${getUsername()}!`;
     } else {
-        loginButton.style.display = 'inline-block';
-        registerButton.style.display = 'inline-block';
-        logoutButton.style.display = 'none';
-        usernameDisplay.textContent = '';
+        if (loginButton) loginButton.style.display = 'inline-block';
+        if (registerButton) registerButton.style.display = 'inline-block';
+        if (logoutButton) logoutButton.style.display = 'none';
+        if (usernameDisplay) usernameDisplay.textContent = '';
     }
 }
 

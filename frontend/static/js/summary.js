@@ -13,14 +13,14 @@ let sessionWealthChart = null;
 
 // Elementy DOM
 const sessionStatsContainer = document.getElementById('session-stats');
-const sessionWealthChartContainer = document.getElementById('session-wealth-chart');
-const posRankingContainer = document.getElementById('pos-ranking');
-const negRankingContainer = document.getElementById('neg-ranking');
+const sessionWealthChartContainer = document.getElementById('wealth-chart');
+const posRankingContainer = document.getElementById('positive-stimulus-ranking');
+const negRankingContainer = document.getElementById('neg-stimuli-ranking');
 const roundsDetailsContainer = document.getElementById('rounds-details');
-const roundsTable = document.getElementById('rounds-table');
+const roundsTable = document.getElementById('rounds-details-body');
 const loadingOverlay = document.getElementById('loading-overlay');
 const loadingMessage = document.getElementById('loading-message');
-const detailsToggleButton = document.getElementById('details-toggle-button');
+const detailsToggleButton = document.getElementById('show-details-button');
 const newSessionButton = document.getElementById('new-session-button');
 
 // Pomocnicze funkcje
@@ -352,17 +352,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Aktualizacja nazwy użytkownika w navbar
     const usernameDisplay = document.getElementById('username-display');
     const username = localStorage.getItem('username');
-    if (username) {
+    if (username && usernameDisplay) {
         usernameDisplay.textContent = `Witaj, ${username}`;
     }
 
     // Obsługa wylogowania
     const logoutButton = document.getElementById('logout-button');
-    logoutButton.addEventListener('click', () => {
-        localStorage.removeItem('token');
-        localStorage.removeItem('username');
-        window.location.href = '/';
-    });
+    if (logoutButton) {
+        logoutButton.addEventListener('click', () => {
+            localStorage.removeItem('token');
+            localStorage.removeItem('username');
+            window.location.href = '/';
+        });
+    }
 
     // Pobierz ID sesji z URL
     const urlParams = new URLSearchParams(window.location.search);
@@ -377,9 +379,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Inicjalizacja podsumowania
     await loadSessionSummary(sessionId);
 
-    // Obsługa przycisków
-    detailsToggleButton.addEventListener('click', toggleRoundsDetails);
-    newSessionButton.addEventListener('click', startNewSession);
+    // Obsługa przycisków - sprawdź czy istnieją przed dodaniem event listenerów
+    if (detailsToggleButton) {
+        detailsToggleButton.addEventListener('click', toggleRoundsDetails);
+    } else {
+        console.error('Element detailsToggleButton nie istnieje');
+    }
+    
+    if (newSessionButton) {
+        newSessionButton.addEventListener('click', startNewSession);
+    } else {
+        console.error('Element newSessionButton nie istnieje');
+    }
 });
 
 // Funkcja ładująca podsumowanie sesji
