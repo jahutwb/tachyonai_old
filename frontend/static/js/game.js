@@ -400,6 +400,10 @@ async function selectCurtain(side) {
         GameState.endPrice = result.end_price;
         GameState.profit_fraction = result.profit_fraction;
         
+        // Zachowaj informacje o akcjach z aktualnej rundy
+        const leftAction = GameState.leftAction;
+        const rightAction = GameState.rightAction;
+        
         // Aktualizacja statystyk sesji
         if (result.result === 'SUCCESS') {
             GameState.successes++;
@@ -411,17 +415,23 @@ async function selectCurtain(side) {
             GameState.remainingPairs--;
         }
         
+        // Przywróć informacje o akcjach, żeby były widoczne w logowaniu
+        GameState.leftAction = leftAction;
+        GameState.rightAction = rightAction;
+        
         // Aktualizacja widoku statystyk
         updateStatsView();
         
         // Wyświetl wynik - korzystamy z URL stimulus_url z odpowiedzi serwera
-        let stimulusUrl = '';
-        if (result.result === 'SUCCESS') {
-            // W przypadku sukcesu pokazujemy pozytywny bodziec
-            stimulusUrl = `/api/images/${GameState.currentRound.pos_image_id}`;
-        } else {
-            // W przypadku porażki pokazujemy negatywny bodziec
-            stimulusUrl = `/api/images/${GameState.currentRound.neg_image_id}`;
+        let stimulusUrl = result.stimulus_url;
+        if (!stimulusUrl) {
+            if (result.result === 'SUCCESS') {
+                // Zapasowy URL w przypadku braku stimulus_url w odpowiedzi
+                stimulusUrl = `/api/images/${GameState.currentRound.pos_image_id}/thumbnail`;
+            } else {
+                // Zapasowy URL w przypadku braku stimulus_url w odpowiedzi
+                stimulusUrl = `/api/images/${GameState.currentRound.neg_image_id}/thumbnail`;
+            }
         }
         
         // Aktualizacja logu stanu
