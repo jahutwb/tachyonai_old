@@ -161,25 +161,25 @@ Poniższa lista to **inkrementalny plan** rozwoju projektu tachyonai (repo: [htt
 
 ## 11. Testy End-to-End (E2E) z Puppeteer
 
-- [ ] **11.1. Konfiguracja środowiska testowego**
+- [x] **11.1. Konfiguracja środowiska testowego**
   - Instalacja Puppeteer i zależności: `npm install puppeteer jest`
   - Struktura katalogów: `/tests/e2e`
   - Konfiguracja Jest dla testów E2E
-- [ ] **11.2. Testy przepływu rejestracji i logowania**
+- [x] **11.2. Testy przepływu rejestracji i logowania**
   - Sprawdzenie formularza rejestracji (validacja)
   - Sprawdzenie procesu logowania i zachowania tokena
   - Test wylogowania
-- [ ] **11.3. Testy rozgrywki**
+- [x] **11.3. Testy rozgrywki**
   - Tworzenie nowej sesji
   - Interakcja z kurtynami (kliknięcia)
   - Sprawdzenie animacji i wyświetlania rezultatów
   - Weryfikacja statystyk i nawigacji między rundami
-- [ ] **11.4. Testy podsumowania sesji i statystyk**
+- [x] **11.4. Testy podsumowania sesji i statystyk**
   - Sprawdzenie wyświetlania podsumowania po zakończeniu sesji
   - Weryfikacja wykresów i rankingów
   - Test przejścia do kolejnej sesji
   - Sprawdzenie wyświetlania globalnych statystyk użytkownika
-- [ ] **11.5. Integracja testów E2E z pipeline CI/CD**
+- [x] **11.5. Integracja testów E2E z pipeline CI/CD**
   - Konfiguracja GitHub Actions do uruchamiania testów
   - Generowanie raportów z testów
 
@@ -197,15 +197,14 @@ Poniższa lista to **inkrementalny plan** rozwoju projektu tachyonai (repo: [htt
    - Logowanie użytkowników i śledzenie bodźców
    - Pełny interfejs użytkownika zgodny ze specyfikacją
    - Testy integracyjne API
+   - Testy End-to-End (E2E) z Puppeteer - zaimplementowane i działające
 
 2. **W trakcie realizacji:**
-   - Testy End-to-End (E2E) z Puppeteer
    - Przygotowanie do ewentualnego wdrożenia na platformie hostingowej
 
 3. **Następne kroki:**
-   - Implementacja testów E2E
    - Wdrożenie aplikacji (deploy)
    - Ostateczne testy UX/UI i optymalizacja wydajności
 
-Aktualne postępy stanowią około 95% całego projektu. Główne pozostałe elementy to testy E2E i ewentualne wdrożenie aplikacji w środowisku produkcyjnym.
+Aktualne postępy stanowią około 99% całego projektu. Główny pozostały element to ewentualne wdrożenie aplikacji w środowisku produkcyjnym.
 
