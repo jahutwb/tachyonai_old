@@ -48,23 +48,43 @@ def get_next_round(
         round_number = round_count + 1
         logger.info(f"Tworzenie rundy numer {round_number} dla sesji {session_id}")
         
-        # Pobierz obrazy do rundy
+        # Wybierz obrazy z puli zdefiniowanej w sesji
         try:
-            # Uproszczona logika wyboru obrazów - w prawdziwej aplikacji będzie bardziej skomplikowana
-            # Pobierz losowy obraz pozytywny i negatywny
-            pos_images = db.query(Image).filter(Image.type == ImageTypeEnum.POSITIVE).limit(100).all()
-            neg_images = db.query(Image).filter(Image.type == ImageTypeEnum.NEGATIVE).limit(100).all()
+            # Upewnij się, że pule istnieją
+            if not session.pos_pool_json or not session.neg_pool_json:
+                logger.error(f"Brak zdefiniowanych puli obrazów w sesji {session_id}")
+                raise HTTPException(status_code=500, detail="Nieprawidłowa konfiguracja sesji - brak pul obrazów")
+                
+            # Wybierz losowy obraz z puli pozytywnej
+            pos_pool = session.pos_pool_json
+            if not pos_pool:
+                logger.error(f"Pusta pula obrazów pozytywnych w sesji {session_id}")
+                raise HTTPException(status_code=500, detail="Pusta pula obrazów pozytywnych")
+                
+            # Wybierz losowy obraz z puli negatywnej
+            neg_pool = session.neg_pool_json
+            if not neg_pool:
+                logger.error(f"Pusta pula obrazów negatywnych w sesji {session_id}")
+                raise HTTPException(status_code=500, detail="Pusta pula obrazów negatywnych")
+                
+            # Losowo wybierz obrazy z pul
+            pos_item = random.choice(pos_pool)
+            neg_item = random.choice(neg_pool)
             
-            if not pos_images or not neg_images:
-                logger.error(f"Brak dostępnych obrazów w bazie danych")
-                raise HTTPException(status_code=500, detail="Brak dostępnych obrazów")
+            # Pobierz obiekty obrazów z bazy danych
+            pos_image = db.query(Image).filter(Image.id == pos_item["id"]).first()
+            neg_image = db.query(Image).filter(Image.id == neg_item["id"]).first()
             
-            pos_image = random.choice(pos_images)
-            neg_image = random.choice(neg_images)
+            if not pos_image or not neg_image:
+                logger.error(f"Nie znaleziono obrazów w bazie danych: pos_id={pos_item['id']}, neg_id={neg_item['id']}")
+                raise HTTPException(status_code=500, detail="Nieprawidłowe referencje obrazów w puli")
             
-            logger.info(f"Wybrano obrazy: pos_id={pos_image.id}, neg_id={neg_image.id}")
+            logger.info(f"Wybrano obrazy z puli: pos_id={pos_image.id}, neg_id={neg_image.id}")
+            
+        except HTTPException:
+            raise
         except Exception as e:
-            logger.error(f"Błąd podczas wyboru obrazów: {str(e)}")
+            logger.error(f"Błąd podczas wyboru obrazów z puli: {str(e)}")
             logger.error(traceback.format_exc())
             raise HTTPException(status_code=500, detail=f"Błąd podczas wyboru obrazów: {str(e)}")
         
@@ -137,6 +157,7 @@ def submit_round_choice(
         logger.info(f"Wybrana akcja: {user_action} (strona: {choice.side})")
         
         start_price = round_obj.start_price
+        logger.debug(f"Cena początkowa: {start_price}")
         
         # Dla uproszczenia, losowo generujemy zmianę ceny
         price_change = random.uniform(-0.01, 0.01)  # +/- 1%

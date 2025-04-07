@@ -3,6 +3,7 @@ from typing import List, Any
 from sqlalchemy.orm import Session
 import traceback
 import logging
+from sqlalchemy import func
 
 from ..database import get_db
 from ..models import User, Session as SessionModel, Round, Image
@@ -18,20 +19,56 @@ def create_session(
     current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ):
     """Tworzy nową sesję dla zalogowanego użytkownika."""
-    # Ta implementacja jest uproszczona - w prawdziwej aplikacji należy zaimplementować logikę wybierania puli obrazów
-    session = SessionModel(
-        user_id=current_user.id,
-        status="ACTIVE",
-        pos_pool_json=[],
-        neg_pool_json=[],
-        session_profit_factor=1.0,
-        remaining_pairs=6
-    )
-    db.add(session)
-    db.commit()
-    db.refresh(session)
-    logger.info(f"Utworzono nową sesję id={session.id} dla użytkownika {current_user.id}")
-    return session
+    try:
+        # Pobierz losowe obrazy pozytywne i negatywne do puli
+        pos_images = db.query(Image).filter(Image.type == "POSITIVE").order_by(func.random()).limit(6).all()
+        neg_images = db.query(Image).filter(Image.type == "NEGATIVE").order_by(func.random()).limit(6).all()
+        
+        if len(pos_images) < 6 or len(neg_images) < 6:
+            logger.error(f"Niewystarczająca liczba obrazów w bazie danych. Znaleziono: {len(pos_images)} pozytywnych, {len(neg_images)} negatywnych")
+            raise HTTPException(status_code=500, detail="Niewystarczająca liczba obrazów w bazie danych")
+            
+        # Przygotuj struktury JSON dla pul obrazów
+        pos_pool_json = []
+        for img in pos_images:
+            pos_pool_json.append({
+                "id": img.id,
+                "successes": 0,
+                "failures": 0,
+                "origin": "random"
+            })
+            
+        neg_pool_json = []
+        for img in neg_images:
+            neg_pool_json.append({
+                "id": img.id,
+                "successes": 0,
+                "failures": 0,
+                "origin": "random"
+            })
+            
+        # Utwórz sesję z przygotowanymi pulami obrazów
+        session = SessionModel(
+            user_id=current_user.id,
+            status="ACTIVE",
+            pos_pool_json=pos_pool_json,
+            neg_pool_json=neg_pool_json,
+            session_profit_factor=1.0,
+            remaining_pairs=6
+        )
+        
+        db.add(session)
+        db.commit()
+        db.refresh(session)
+        logger.info(f"Utworzono nową sesję id={session.id} dla użytkownika {current_user.id} z pulą {len(pos_pool_json)} pozytywnych i {len(neg_pool_json)} negatywnych obrazów")
+        return session
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Błąd podczas tworzenia sesji: {str(e)}")
+        logger.error(traceback.format_exc())
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Błąd serwera: {str(e)}")
 
 
 @router.get("/sessions/{session_id}", response_model=schemas.Session)
