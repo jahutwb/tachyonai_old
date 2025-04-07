@@ -265,4 +265,14 @@ class GenealogyNode(BaseModel):
     failures: int
     profit_factor: float
     parent: Optional[int] = None
-    origin: str  # "random", "child", "bought" 
+    origin: str  # "random", "child", "bought"
+
+
+# Statystyki puli bodźców generowanej przez algorytm quasi-genetyczny
+class PoolStatistics(BaseModel):
+    random_count: int  # Liczba losowych bodźców
+    bought_count: int  # Liczba kupionych bodźców
+    child_count: int   # Liczba dzieci
+    total_count: int   # Łączna liczba bodźców
+    is_ready: bool = True  # Czy pula jest gotowa
+    session_id: Optional[int] = None  # ID nowo utworzonej sesji 
