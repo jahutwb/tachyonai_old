@@ -46,9 +46,11 @@ def test_db(test_engine):
     
     # Dodaj testowego użytkownika
     hashed_password = get_password_hash("test_password")
-    test_user = User(username="test_user", password_hash=hashed_password)
-    session.add(test_user)
-    session.commit()
+    test_user = session.query(User).filter(User.username == "test_user").first()
+    if not test_user:
+        test_user = User(username="test_user", password_hash=hashed_password)
+        session.add(test_user)
+        session.commit()
     
     # Dodaj testowe obrazy
     for i in range(5):

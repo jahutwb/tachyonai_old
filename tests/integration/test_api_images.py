@@ -78,16 +78,42 @@ def test_get_image_thumbnail(authorized_client, test_images, monkeypatch):
     assert response.headers["content-type"] == "image/png"
 
 
-def test_get_random_images(authorized_client, test_images, monkeypatch):
+def test_get_random_images(authorized_client, test_images):
     """Test pobierania losowych obrazów."""
-    # Ten test jest pomijany, ponieważ endpointa nie działa poprawnie
-    pytest.skip("Endpoint /api/images/random nie działa poprawnie. Wymaga naprawy.")
+    response = authorized_client.get("/api/images/random?type=POSITIVE&count=2")
+    assert response.status_code == 200
+    
+    images_data = response.json()
+    assert len(images_data) == 2
+    assert all(img["type"] == "POSITIVE" for img in images_data)
+    
+    response = authorized_client.get("/api/images/random?type=NEGATIVE&count=2")
+    assert response.status_code == 200
+    
+    images_data = response.json()
+    assert len(images_data) == 2
+    assert all(img["type"] == "NEGATIVE" for img in images_data)
 
 
-def test_get_images_ranking(authorized_client, test_images, monkeypatch):
+def test_get_images_ranking(authorized_client, test_images):
     """Test pobierania rankingu obrazów."""
-    # Ten test jest pomijany, ponieważ endpointa nie działa poprawnie
-    pytest.skip("Endpoint /api/images/ranking nie działa poprawnie. Wymaga naprawy.")
+    response = authorized_client.get("/api/images/ranking?type=POSITIVE&limit=3")
+    assert response.status_code == 200
+    
+    ranking_data = response.json()
+    assert len(ranking_data) == 3
+    
+    # Sprawdź, czy ranking jest posortowany według total_successes (malejąco)
+    assert ranking_data[0]["total_successes"] >= ranking_data[1]["total_successes"]
+    assert ranking_data[1]["total_successes"] >= ranking_data[2]["total_successes"]
+    
+    # Sprawdź ranking dla obrazów negatywnych
+    response = authorized_client.get("/api/images/ranking?type=NEGATIVE&limit=3")
+    assert response.status_code == 200
+    
+    ranking_data = response.json()
+    assert len(ranking_data) == 3
+    assert all(img["type"] == "NEGATIVE" for img in ranking_data)
 
 
 def test_get_images_with_embedding(authorized_client, test_images):
