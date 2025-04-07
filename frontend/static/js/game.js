@@ -226,6 +226,21 @@ async function showResultPhase(result, stimulusUrl) {
     }
 }
 
+// Funkcja do pobierania aktualnej ceny BTC
+async function getCurrentPrice() {
+    try {
+        const response = await fetchWithAuth('/api/price/current');
+        if (!response.ok) {
+            throw new Error(`Błąd pobierania ceny: ${response.status} ${response.statusText}`);
+        }
+        const data = await response.json();
+        return data.price;
+    } catch (error) {
+        console.error('Błąd podczas pobierania aktualnej ceny:', error);
+        return 50000.0; // Wartość domyślna w przypadku błędu
+    }
+}
+
 // Inicjalizacja i ładowanie sesji
 async function initGame() {
     showLoadingOverlay('Inicjalizacja gry...');
@@ -352,8 +367,8 @@ async function selectCurtain(side) {
         leftCurtain.classList.add('curtain-hidden');
     }
     
-    // Zapamiętaj cenę początkową
-    GameState.startPrice = await getCurrentPrice();
+    // Używamy ceny zapisanej w GameState.currentRound
+    GameState.startPrice = GameState.currentRound.start_price;
     GameState.isWaitingForPriceChange = true;
     
     console.log(`Cena początkowa: ${GameState.startPrice}`);
