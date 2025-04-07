@@ -11,11 +11,15 @@ let currentSession = null;
 let sessionRounds = [];
 let sessionWealthChart = null;
 
-// Elementy DOM
-const sessionStatsContainer = document.getElementById('session-stats');
+// Elementy DOM - aktualizacja identyfikatorów zgodnie z HTML
+// ważne - dodanie sprawdzenia w funkcji inicjalizującej czy elementy istnieją
+const sessionSuccessesElement = document.getElementById('session-successes');
+const sessionFailuresElement = document.getElementById('session-failures');
+const sessionDifferenceElement = document.getElementById('session-difference');
+const sessionSuccessRateElement = document.getElementById('session-success-rate');
+const sessionProfitElement = document.getElementById('session-profit');
 const sessionWealthChartContainer = document.getElementById('wealth-chart');
 const posRankingContainer = document.getElementById('positive-stimulus-ranking');
-const negRankingContainer = document.getElementById('neg-stimuli-ranking');
 const roundsDetailsContainer = document.getElementById('rounds-details');
 const roundsTable = document.getElementById('rounds-details-body');
 const loadingOverlay = document.getElementById('loading-overlay');
@@ -379,6 +383,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Inicjalizacja podsumowania
     await loadSessionSummary(sessionId);
 
+    // Pobierz referencje do elementów po załadowaniu strony
+    const detailsToggleButton = document.getElementById('show-details-button');
+    const newSessionButton = document.getElementById('new-session-button');
+
     // Obsługa przycisków - sprawdź czy istnieją przed dodaniem event listenerów
     if (detailsToggleButton) {
         detailsToggleButton.addEventListener('click', toggleRoundsDetails);
@@ -463,10 +471,34 @@ async function loadSessionSummary(sessionId) {
             }
             
             // Renderowanie danych - sprawdzamy czy elementy istnieją przed renderowaniem
-            if (sessionStatsContainer) {
-                renderSessionStats(sessionSummary);
+            if (sessionSuccessesElement) {
+                sessionSuccessesElement.textContent = sessionSummary.success_count;
             } else {
-                console.error('Element sessionStatsContainer nie istnieje - nie można renderować statystyk sesji');
+                console.error('Element sessionSuccessesElement nie istnieje - nie można renderować statystyk sesji');
+            }
+            
+            if (sessionFailuresElement) {
+                sessionFailuresElement.textContent = sessionSummary.failure_count;
+            } else {
+                console.error('Element sessionFailuresElement nie istnieje - nie można renderować statystyk sesji');
+            }
+            
+            if (sessionDifferenceElement) {
+                sessionDifferenceElement.textContent = sessionSummary.success_count - sessionSummary.failure_count;
+            } else {
+                console.error('Element sessionDifferenceElement nie istnieje - nie można renderować statystyk sesji');
+            }
+            
+            if (sessionSuccessRateElement) {
+                sessionSuccessRateElement.textContent = `${Math.round((sessionSummary.success_count / (sessionSummary.success_count + sessionSummary.failure_count)) * 100)}%`;
+            } else {
+                console.error('Element sessionSuccessRateElement nie istnieje - nie można renderować statystyk sesji');
+            }
+            
+            if (sessionProfitElement) {
+                sessionProfitElement.textContent = `${((sessionSummary.session_profit_factor - 1) * 100).toFixed(2)}%`;
+            } else {
+                console.error('Element sessionProfitElement nie istnieje - nie można renderować statystyk sesji');
             }
             
             if (document.getElementById('wealth-chart')) {
@@ -486,18 +518,6 @@ async function loadSessionSummary(sessionId) {
                 }
             } else {
                 console.error('Element positive-stimulus-ranking nie istnieje w dokumencie');
-            }
-            
-            const negRankingElement = document.getElementById('neg-stimuli-ranking');
-            if (negRankingElement) {
-                if (sessionSummary.neg_ranking && sessionSummary.neg_ranking.length > 0) {
-                    renderStimuliRanking(sessionSummary.neg_ranking, 'neg');
-                } else {
-                    console.log('Brak danych rankingowych dla bodźców negatywnych');
-                    negRankingElement.innerHTML = '<p>Brak danych dla rankingu bodźców negatywnych</p>';
-                }
-            } else {
-                console.error('Element neg-stimuli-ranking nie istnieje w dokumencie');
             }
             
             if (roundsTable) {
@@ -522,8 +542,24 @@ async function loadSessionSummary(sessionId) {
             };
             
             // Sprawdzamy czy elementy istnieją przed renderowaniem
-            if (sessionStatsContainer) {
-                renderSessionStats(fallbackSummary);
+            if (sessionSuccessesElement) {
+                sessionSuccessesElement.textContent = fallbackSummary.success_count;
+            }
+            
+            if (sessionFailuresElement) {
+                sessionFailuresElement.textContent = fallbackSummary.failure_count;
+            }
+            
+            if (sessionDifferenceElement) {
+                sessionDifferenceElement.textContent = fallbackSummary.success_count - fallbackSummary.failure_count;
+            }
+            
+            if (sessionSuccessRateElement) {
+                sessionSuccessRateElement.textContent = `${Math.round((fallbackSummary.success_count / (fallbackSummary.success_count + fallbackSummary.failure_count)) * 100)}%`;
+            }
+            
+            if (sessionProfitElement) {
+                sessionProfitElement.textContent = `${((fallbackSummary.session_profit_factor - 1) * 100).toFixed(2)}%`;
             }
             
             if (document.getElementById('wealth-chart')) {
@@ -538,11 +574,6 @@ async function loadSessionSummary(sessionId) {
             const posRankingElement = document.getElementById('positive-stimulus-ranking');
             if (posRankingElement) {
                 posRankingElement.innerHTML = '<p>Nie udało się załadować rankingu bodźców pozytywnych</p>';
-            }
-            
-            const negRankingElement = document.getElementById('neg-stimuli-ranking');
-            if (negRankingElement) {
-                negRankingElement.innerHTML = '<p>Nie udało się załadować rankingu bodźców negatywnych</p>';
             }
         }
         
@@ -568,8 +599,24 @@ async function loadSessionSummary(sessionId) {
             };
             
             // Sprawdzamy czy elementy istnieją przed renderowaniem
-            if (sessionStatsContainer) {
-                renderSessionStats(fallbackSummary);
+            if (sessionSuccessesElement) {
+                sessionSuccessesElement.textContent = fallbackSummary.success_count;
+            }
+            
+            if (sessionFailuresElement) {
+                sessionFailuresElement.textContent = fallbackSummary.failure_count;
+            }
+            
+            if (sessionDifferenceElement) {
+                sessionDifferenceElement.textContent = fallbackSummary.success_count - fallbackSummary.failure_count;
+            }
+            
+            if (sessionSuccessRateElement) {
+                sessionSuccessRateElement.textContent = `${Math.round((fallbackSummary.success_count / (fallbackSummary.success_count + fallbackSummary.failure_count)) * 100)}%`;
+            }
+            
+            if (sessionProfitElement) {
+                sessionProfitElement.textContent = `${((fallbackSummary.session_profit_factor - 1) * 100).toFixed(2)}%`;
             }
             
             if (document.getElementById('wealth-chart')) {
@@ -581,68 +628,6 @@ async function loadSessionSummary(sessionId) {
             }
         }
     }
-}
-
-// Funkcja renderująca statystyki sesji
-function renderSessionStats(summary) {
-    if (!summary) {
-        console.error('Brak danych podsumowania do renderowania statystyk');
-        if (sessionStatsContainer) {
-            sessionStatsContainer.innerHTML = '<div class="error-message">Nie można wyświetlić statystyk - brak danych.</div>';
-        } else {
-            console.error('Element sessionStatsContainer nie istnieje w dokumencie');
-        }
-        return;
-    }
-    
-    console.log('Renderowanie statystyk sesji:', summary);
-    
-    // Sprawdzenie czy kontener statystyk istnieje
-    if (!sessionStatsContainer) {
-        console.error('Element sessionStatsContainer nie istnieje w dokumencie');
-        return;
-    }
-    
-    // Obliczenie podstawowych statystyk z dostępnych danych
-    const totalRounds = summary.round_count || sessionRounds.length || 0;
-    const successCount = summary.success_count || sessionRounds.filter(round => round.result === 'SUCCESS').length || 0;
-    const failureCount = summary.failure_count || sessionRounds.filter(round => round.result === 'FAILURE').length || 0;
-    const successRate = totalRounds > 0 ? (successCount / totalRounds) * 100 : 0;
-    
-    // Obliczenie zysku - użyj profit_factor z podsumowania lub z sesji
-    const sessionProfitFactor = summary.session_profit_factor || currentSession.session_profit_factor || 1.0;
-    const profitFactor = (sessionProfitFactor - 1) * 100;
-    
-    // Renderowanie HTML
-    sessionStatsContainer.innerHTML = `
-        <div class="session-details-stats">
-            <div class="stat-group">
-                <h3>Podstawowe statystyki</h3>
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <div class="stat-value">${successCount}</div>
-                        <div class="stat-label">Sukcesów</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value">${failureCount}</div>
-                        <div class="stat-label">Porażek</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value">${successCount - failureCount}</div>
-                        <div class="stat-label">Różnica</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value">${successRate.toFixed(2)}%</div>
-                        <div class="stat-label">% trafień</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value">${profitFactor.toFixed(2)}%</div>
-                        <div class="stat-label">Finalny zysk</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
 }
 
 // Funkcja renderująca wykres bogactwa
@@ -724,14 +709,15 @@ function renderWealthChart(rounds) {
 
 // Funkcja renderująca ranking bodźców
 function renderStimuliRanking(ranking, type) {
-    const container = type === 'pos' ? document.getElementById('positive-stimulus-ranking') : document.getElementById('neg-stimuli-ranking');
+    // Dla tego HTML obslugujemy tylko ranking pozytywny (type === 'pos')
+    const container = document.getElementById('positive-stimulus-ranking');
     
     if (!container) {
-        console.error(`Nie znaleziono kontenera dla typu: ${type}`);
+        console.error(`Nie znaleziono kontenera dla rankingu bodźców`);
         return;
     }
     
-    const title = type === 'pos' ? 'Ranking bodźców pozytywnych' : 'Ranking bodźców negatywnych';
+    const title = 'Ranking bodźców pozytywnych';
     
     if (!ranking || ranking.length === 0) {
         container.innerHTML = `<p>Brak danych dla ${title}</p>`;
@@ -739,7 +725,7 @@ function renderStimuliRanking(ranking, type) {
     }
     
     // Przygotowanie HTML
-    let html = `<h3>${title}</h3><div class="ranking-container">`;
+    let html = `<div class="ranking-container">`;
     
     ranking.forEach((stimulus, index) => {
         html += `
