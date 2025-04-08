@@ -467,6 +467,12 @@ async function loadSessionSummary(sessionId) {
         const sessionSummary = await summaryResponse.json();
         console.log('Podsumowanie sesji:', sessionSummary);
         
+        // Sprawdź, czy sesja jest zakończona i rozpocznij generowanie nowej puli
+        if (sessionSummary.status === "COMPLETED") {
+            console.log("Sesja zakończona, sprawdzam/rozpoczynam generowanie nowej puli...");
+            checkPoolReadiness(sessionSummary.id);
+        }
+        
         // Renderowanie danych
         renderSessionStats(sessionSummary);
         renderWealthChart(sessionRounds);
@@ -733,6 +739,14 @@ function toggleRoundsDetails() {
 async function startNewSession() {
     console.log('Rozpoczynanie nowej sesji...');
     try {
+        // Pokaż stan ładowania na przycisku
+        const newSessionButton = document.getElementById('new-session-button');
+        if (newSessionButton) {
+            newSessionButton.disabled = true;
+            newSessionButton.classList.add('loading');
+            newSessionButton.innerHTML = '<div class="spinner"></div> Generowanie puli...';
+        }
+        
         showLoading('Tworzenie nowej sesji...');
         
         // Sprawdzenie tokenu i dodanie logów diagnostycznych
@@ -926,4 +940,41 @@ async function checkPoolReadiness(sessionId, retryCount = 0) {
             }
         }
     }
+}
+
+// Funkcja wyświetlająca statystyki nowej puli
+function displayPoolStatistics(data) {
+    console.log("Wyświetlam statystyki nowej puli:", data);
+    
+    // Znajdź lub utwórz kontener na statystyki
+    let statsContainer = document.getElementById('pool-stats-container');
+    if (!statsContainer) {
+        statsContainer = document.createElement('div');
+        statsContainer.id = 'pool-stats-container';
+        statsContainer.className = 'pool-stats-box';
+        
+        // Dodaj kontener po przycisku nowej sesji
+        const newSessionButton = document.getElementById('new-session-button');
+        if (newSessionButton && newSessionButton.parentNode) {
+            newSessionButton.parentNode.insertAdjacentElement('afterend', statsContainer);
+        } else {
+            document.querySelector('.session-summary-container').appendChild(statsContainer);
+        }
+    }
+    
+    // Przygotuj statystyki do wyświetlenia
+    const boughtCount = data.bought_count || 0;
+    const generatedCount = data.generated_count || 0;
+    const randomCount = data.random_count || 0;
+    
+    const statsHTML = `
+        <h4>Statystyki nowej puli:</h4>
+        <ul>
+            <li>Kupione bodźce: ${boughtCount}</li>
+            <li>Wygenerowane bodźce: ${generatedCount}</li>
+            <li>Losowe bodźce: ${randomCount}</li>
+        </ul>
+    `;
+    
+    statsContainer.innerHTML = statsHTML;
 }

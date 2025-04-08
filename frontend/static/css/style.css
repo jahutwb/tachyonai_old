@@ -115,6 +115,23 @@ a:hover {
     background-color: var(--accent-color-light);
 }
 
+.button .spinner {
+    width: 16px;
+    height: 16px;
+    border-width: 2px;
+    margin: 0 8px 0 0;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+.button.loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.7;
+    cursor: wait;
+}
+
 /* Główna zawartość */
 .main-content {
     min-height: calc(100vh - 60px - 15vh); /* Uwzględnia navbar i footer */
@@ -658,6 +675,28 @@ a:hover {
 .small-button {
     padding: 4px 8px;
     font-size: 14px;
+}
+
+/* Kontener statystyk puli */
+.pool-stats-box {
+    background-color: var(--bg-color-light);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-md);
+    margin-top: var(--spacing-md);
+    border: 1px solid var(--accent-color);
+}
+
+.pool-stats-box h4 {
+    color: var(--accent-color);
+    margin-bottom: var(--spacing-sm);
+}
+
+.pool-stats-box ul {
+    list-style-type: none;
+}
+
+.pool-stats-box li {
+    margin-bottom: 4px;
 }
 
 /* Reaktywne style */
