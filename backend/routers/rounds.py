@@ -11,6 +11,7 @@ from ..database import get_db
 from ..models import User, Session as SessionModel, Round, Image, ImageTypeEnum
 from .. import schemas
 from ..auth import get_current_user
+from ..routers.sessions import generate_pool_with_genetic_algorithm
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -274,6 +275,28 @@ def submit_round_choice(
             session.status = "COMPLETED"
             session.ended_at = func.now()
             logger.info(f"Kończę sesję {session.id} - brak dostępnych par")
+            
+            # Automatycznie rozpocznij generowanie nowej puli w tle
+            try:
+                logger.info(f"Rozpoczynam automatyczne generowanie nowej puli dla użytkownika {current_user.id}")
+                pos_pool_json, neg_pool_json = generate_pool_with_genetic_algorithm(session, db)
+                
+                # Tworzę nową sesję PENDING z wygenerowaną pulą
+                new_session = SessionModel(
+                    user_id=current_user.id,
+                    status="PENDING",
+                    pos_pool_json=pos_pool_json,
+                    neg_pool_json=neg_pool_json,
+                    session_profit_factor=1.0,
+                    remaining_pairs=6,
+                    started_at=None  # Zostanie ustawione przy aktywacji
+                )
+                
+                db.add(new_session)
+                logger.info(f"Utworzono nową sesję PENDING (id={new_session.id}) dla użytkownika {current_user.id}")
+            except Exception as e:
+                logger.error(f"Błąd podczas automatycznego generowania nowej puli: {str(e)}")
+                logger.error(traceback.format_exc())
         
         # Zapisz wszystkie zmiany w jednej transakcji
         db.commit()

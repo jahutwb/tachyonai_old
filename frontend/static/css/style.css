@@ -132,6 +132,24 @@ a:hover {
     cursor: wait;
 }
 
+.primary-button.loading {
+    background-color: var(--bg-color-light);
+    border: 1px solid var(--accent-color);
+    color: var(--text-color);
+}
+
+.primary-button .spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-top: 2px solid var(--accent-color);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-right: 8px;
+    vertical-align: middle;
+}
+
 /* Główna zawartość */
 .main-content {
     min-height: calc(100vh - 60px - 15vh); /* Uwzględnia navbar i footer */
@@ -680,43 +698,42 @@ a:hover {
 /* Kontener statystyk puli */
 .pool-stats-box {
     background-color: var(--bg-color-light);
+    border: 1px solid var(--accent-color);
     border-radius: var(--border-radius);
     padding: var(--spacing-md);
     margin-top: var(--spacing-md);
-    border: 1px solid var(--accent-color);
+    margin-bottom: var(--spacing-md);
+    max-width: 600px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .pool-stats-box h4 {
     color: var(--accent-color);
+    font-size: 18px;
     margin-bottom: var(--spacing-sm);
-}
-
-.pool-stats-box ul {
-    list-style-type: none;
-}
-
-.pool-stats-box li {
-    margin-bottom: 4px;
+    text-align: center;
 }
 
 .pool-stats-grid {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
     gap: var(--spacing-md);
-    margin-top: var(--spacing-sm);
-}
-
-.pool-stats-column {
-    flex: 1;
-    min-width: 180px;
-    background-color: rgba(0, 0, 0, 0.2);
-    padding: var(--spacing-sm);
-    border-radius: var(--border-radius);
 }
 
 .pool-stats-column h5 {
-    color: var(--accent-color-light);
+    color: var(--text-color-secondary);
+    font-size: 16px;
     margin-bottom: var(--spacing-sm);
+}
+
+.pool-stats-column ul {
+    list-style-type: none;
+    padding-left: var(--spacing-sm);
+}
+
+.pool-stats-column li {
+    margin-bottom: 5px;
+    font-size: 14px;
 }
 
 /* Reaktywne style */
@@ -748,4 +765,4 @@ a:hover {
     .stats-grid {
         grid-template-columns: repeat(2, 1fr);
     }
-} 
+}

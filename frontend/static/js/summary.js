@@ -352,60 +352,61 @@ function translateOrigin(origin) {
 }
 
 // Sprawdzanie, czy użytkownik jest zalogowany
-document.addEventListener('DOMContentLoaded', async () => {
-    console.log('Inicjalizacja strony podsumowania...');
-    const token = localStorage.getItem('token');
-    if (!token) {
-        window.location.href = '/';
-        return;
-    }
-
-    // Aktualizacja nazwy użytkownika w navbar
-    const usernameDisplay = getElement('username-display');
-    const username = localStorage.getItem('username');
-    if (usernameDisplay && username) {
-        usernameDisplay.textContent = `Witaj, ${username}`;
-    }
-
-    // Obsługa wylogowania
-    const logoutButton = getElement('logout-button');
-    if (logoutButton) {
-        logoutButton.addEventListener('click', () => {
-            localStorage.removeItem('token');
-            localStorage.removeItem('username');
+document.addEventListener('DOMContentLoaded', async function() {
+    try {
+        // Utwórz container dla statystyk puli - na początku pusty
+        let statsContainer = document.createElement('div');
+        statsContainer.id = 'pool-stats-container';
+        statsContainer.className = 'pool-stats-box';
+        statsContainer.style.display = 'none'; // Początkowe ukrycie
+        
+        // Znajdź przycisk nowej sesji i dodaj kontener po nim
+        const newSessionButton = document.getElementById('new-session-button');
+        if (newSessionButton && newSessionButton.parentNode) {
+            // Dodaj spinner do przycisku aby wskazać, że oczekujemy na generowanie puli
+            newSessionButton.disabled = true;
+            newSessionButton.classList.add('loading');
+            newSessionButton.innerHTML = '<div class="spinner"></div> Oczekiwanie na pulę...';
+            
+            // Dodaj kontener statystyk pod przyciskiem
+            newSessionButton.parentNode.insertAdjacentElement('afterend', statsContainer);
+        }
+        
+        console.log('Inicjalizacja strony podsumowania...');
+        
+        // Inicjalizacja tokenów i pobierania danych
+        initializeTokenCheck();
+        
+        // Pobierz dane sesji z URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const sessionId = urlParams.get('session_id');
+        
+        if (sessionId) {
+            // Ładowanie szczegółów sesji i inicjalizacja podsumowania
+            console.log(`Pobieranie danych dla sesji ${sessionId}...`);
+            await Promise.all([
+                fetchSessionDetails(sessionId),
+                fetchRoundsData(sessionId),
+                fetchSessionImages(sessionId)
+            ]);
+            
+            // Rozpocznij sprawdzanie dostępności puli dla nowej sesji
+            console.log('Rozpoczynam sprawdzanie dostępności nowej puli...');
+            checkPoolReadiness(sessionId);
+        } else {
+            console.error('Brak ID sesji w URL');
+            alert('Brak identyfikatora sesji. Przekierowanie do strony głównej...');
             window.location.href = '/';
-        });
-    }
-
-    // Pobierz ID sesji z URL
-    const urlParams = new URLSearchParams(window.location.search);
-    const sessionId = urlParams.get('session_id');
-
-    if (!sessionId) {
-        alert('Brak identyfikatora sesji. Przekierowanie do strony głównej.');
-        window.location.href = '/';
-        return;
-    }
-
-    // Inicjalizacja podsumowania
-    await loadSessionSummary(sessionId);
-
-    // Obsługa przycisków
-    const detailsToggleButton = getElement('show-details-button');
-    if (detailsToggleButton) {
-        detailsToggleButton.addEventListener('click', toggleRoundsDetails);
-        console.log('Dodano obsługę przycisku przełączania szczegółów');
-    } else {
-        console.warn('Nie znaleziono przycisku przełączania szczegółów');
-    }
-    
-    const newSessionButton = getElement('new-session-button');
-    console.log('Znaleziony przycisk nowej sesji:', newSessionButton);
-    if (newSessionButton) {
-        newSessionButton.addEventListener('click', startNewSession);
-        console.log('Dodano obsługę przycisku nowej sesji');
-    } else {
-        console.warn('Nie znaleziono przycisku nowej sesji');
+        }
+        
+        // Dodaj obsługę kliknięcia przycisku nowej sesji
+        if (newSessionButton) {
+            newSessionButton.addEventListener('click', startNewSession);
+        }
+        
+    } catch (error) {
+        console.error('Błąd inicjalizacji strony:', error);
+        alert('Wystąpił błąd podczas ładowania strony podsumowania.');
     }
 });
 
@@ -739,145 +740,62 @@ function toggleRoundsDetails() {
 async function startNewSession() {
     console.log('Rozpoczynanie nowej sesji...');
     try {
-        // Pokaż stan ładowania na przycisku
         const newSessionButton = document.getElementById('new-session-button');
-        if (newSessionButton) {
-            newSessionButton.disabled = true;
-            newSessionButton.classList.add('loading');
-            newSessionButton.innerHTML = '<div class="spinner"></div> Generowanie puli...';
+        if (!newSessionButton) return;
+        
+        // Pokaż spinner tylko na przycisku
+        newSessionButton.disabled = true;
+        newSessionButton.classList.add('loading');
+        newSessionButton.innerHTML = '<div class="spinner"></div> Tworzenie sesji...';
+        
+        // Pobranie ID sesji PENDING przypisanej do przycisku
+        const pendingSessionId = newSessionButton.getAttribute('data-session-id');
+        
+        if (!pendingSessionId) {
+            console.error('Brak identyfikatora sesji PENDING');
+            throw new Error('Brak identyfikatora sesji PENDING');
         }
         
-        showLoading('Tworzenie nowej sesji...');
-        
-        // Sprawdzenie tokenu i dodanie logów diagnostycznych
+        // Sprawdzenie tokenu
         const token = localStorage.getItem('token');
         if (!token) {
             console.error('Brak tokenu autoryzacji. Przekierowanie do logowania.');
             window.location.href = '/';
             return;
         }
-        console.log('Token autoryzacji znaleziony, długość:', token.length);
         
-        // Sprawdzenie czy najpierw trzeba wygenerować nową pulę
-        console.log('Sprawdzam czy mamy aktualną sesję do wykorzystania...');
-        try {
-            // Pobranie aktualnej sesji z URL
-            const urlParams = new URLSearchParams(window.location.search);
-            const sessionId = urlParams.get('session_id');
-            
-            if (sessionId) {
-                console.log(`Znaleziono ID sesji w URL: ${sessionId}, sprawdzam dostępność nowej puli...`);
-                
-                // Sprawdź czy istnieje już wygenerowana pula dla następnej sesji
-                const poolStatsResponse = await fetch(`/api/sessions/${sessionId}/next-pool-stats`, {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    }
-                });
-                
-                if (poolStatsResponse.ok) {
-                    const poolStats = await poolStatsResponse.json();
-                    console.log('Statystyki puli:', poolStats);
-                    
-                    if (!poolStats.is_ready) {
-                        console.log('Brak gotowej puli, inicjuję generowanie...');
-                        // Wygeneruj nową pulę
-                        const generateResponse = await fetch('/api/sessions/generate-new-pool', {
-                            method: 'POST',
-                            headers: {
-                                'Authorization': `Bearer ${token}`,
-                                'Content-Type': 'application/json'
-                            },
-                            body: JSON.stringify({ previous_session_id: sessionId })
-                        });
-                        
-                        if (generateResponse.ok) {
-                            console.log('Żądanie generowania nowej puli zostało wysłane');
-                            // Pokaż informację o generowaniu
-                            updateLoadingMessage('Generowanie nowej puli danych (może potrwać do 1 minuty)...');
-                            
-                            // Sprawdzaj status generowania co 2 sekundy
-                            let poolReady = false;
-                            let attempts = 0;
-                            const maxAttempts = 30; // Maksymalnie 60 sekund
-                            
-                            while (!poolReady && attempts < maxAttempts) {
-                                await new Promise(resolve => setTimeout(resolve, 2000)); // Poczekaj 2 sekundy
-                                attempts++;
-                                
-                                const checkResponse = await fetch(`/api/sessions/${sessionId}/next-pool-stats`, {
-                                    headers: {
-                                        'Authorization': `Bearer ${token}`
-                                    }
-                                });
-                                
-                                if (checkResponse.ok) {
-                                    const checkData = await checkResponse.json();
-                                    console.log(`Sprawdzenie #${attempts}: `, checkData);
-                                    
-                                    if (checkData.is_ready) {
-                                        console.log('Nowa pula jest gotowa!');
-                                        poolReady = true;
-                                        break;
-                                    }
-                                }
-                                
-                                updateLoadingMessage(`Generowanie nowej puli danych (${attempts*2}s)...`);
-                            }
-                            
-                            if (!poolReady) {
-                                console.log('Upłynął czas oczekiwania na nową pulę, próbuję utworzyć sesję bezpośrednio...');
-                            }
-                        } else {
-                            console.error('Błąd podczas żądania generowania nowej puli:', await generateResponse.text());
-                        }
-                    } else {
-                        console.log('Nowa pula jest już gotowa do użycia');
-                    }
-                }
-            }
-        } catch (poolError) {
-            console.error('Błąd podczas sprawdzania/generowania puli:', poolError);
-            // Kontynuuj z tworzeniem sesji nawet jeśli wystąpił błąd
-        }
-        
-        // Wywołanie API do utworzenia nowej sesji
-        console.log('Wysyłanie żądania do API o utworzenie nowej sesji...');
+        // Aktywuj istniejącą sesję PENDING
         const response = await fetch('/api/sessions', {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json'
-            }
+            },
+            body: JSON.stringify({})  // Pusty obiekt - backend znajdzie istniejącą sesję PENDING
         });
         
-        console.log('Odpowiedź otrzymana, status:', response.status);
-        
         if (!response.ok) {
-            const errorText = await response.text();
-            console.error('Błąd odpowiedzi serwera:', errorText);
-            throw new Error(`Błąd podczas tworzenia nowej sesji (${response.status}): ${errorText}`);
+            const errorData = await response.json();
+            throw new Error(`Błąd aktywacji sesji: ${errorData.detail || 'Nieznany błąd'}`);
         }
         
-        const sessionData = await response.json();
-        console.log('Utworzono nową sesję:', sessionData);
+        const data = await response.json();
+        console.log('Nowa sesja utworzona:', data);
         
-        // Przekierowanie do ekranu gry z nowym ID sesji
-        console.log('Przekierowanie do ekranu gry...');
-        window.location.href = `/game?session_id=${sessionData.id}`;
+        // Przekierowanie do strony gry z nową sesją
+        window.location.href = `/game?session_id=${data.id}`;
     } catch (error) {
-        console.error('Błąd rozpoczynania nowej sesji:', error);
-        hideLoading();
+        console.error('Błąd podczas tworzenia nowej sesji:', error);
+        
+        // Przywróć oryginalny wygląd przycisku
+        const newSessionButton = document.getElementById('new-session-button');
+        if (newSessionButton) {
+            newSessionButton.disabled = false;
+            newSessionButton.classList.remove('loading');
+            newSessionButton.innerHTML = 'Nowa sesja';
+        }
+        
         alert('Wystąpił błąd podczas tworzenia nowej sesji. Spróbuj ponownie.');
-    }
-}
-
-// Pomocnicza funkcja do aktualizacji komunikatu ładowania
-function updateLoadingMessage(message) {
-    const loadingMessage = getElement('loading-message');
-    if (loadingMessage) {
-        loadingMessage.textContent = message;
     }
 }
 
@@ -1004,4 +922,72 @@ function displayPoolStatistics(data) {
     `;
     
     statsContainer.innerHTML = statsHTML;
+}
+
+// Funkcja inicjalizująca sprawdzanie tokenu
+function initializeTokenCheck() {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        window.location.href = '/';
+        return;
+    }
+
+    // Aktualizacja nazwy użytkownika w navbar
+    const usernameDisplay = getElement('username-display');
+    const username = localStorage.getItem('username');
+    if (usernameDisplay && username) {
+        usernameDisplay.textContent = `Witaj, ${username}`;
+    }
+
+    // Obsługa wylogowania
+    const logoutButton = getElement('logout-button');
+    if (logoutButton) {
+        logoutButton.addEventListener('click', () => {
+            localStorage.removeItem('token');
+            localStorage.removeItem('username');
+            window.location.href = '/';
+        });
+    }
+}
+
+// Funkcja do ładowania podsumowania sesji
+async function fetchSessionDetails(sessionId) {
+    try {
+        console.log(`Pobieranie szczegółów sesji ${sessionId}...`);
+        // Pobierz szczegóły sesji z API
+        await loadSessionSummary(sessionId);
+        
+        // Inicjalizacja przycisków
+        const detailsToggleButton = getElement('show-details-button');
+        if (detailsToggleButton) {
+            detailsToggleButton.addEventListener('click', toggleRoundsDetails);
+            console.log('Dodano obsługę przycisku przełączania szczegółów');
+        } else {
+            console.warn('Nie znaleziono przycisku przełączania szczegółów');
+        }
+    } catch (error) {
+        console.error('Błąd podczas pobierania szczegółów sesji:', error);
+    }
+}
+
+// Funkcja do pobierania danych rund
+async function fetchRoundsData(sessionId) {
+    try {
+        console.log(`Pobieranie danych rund dla sesji ${sessionId}...`);
+        // Ta funkcja może być pusta, jeśli loadSessionSummary już pobiera rundy
+        // lub możesz tu dodać własną logikę pobierania danych rund
+    } catch (error) {
+        console.error('Błąd podczas pobierania danych rund:', error);
+    }
+}
+
+// Funkcja do pobierania obrazów sesji
+async function fetchSessionImages(sessionId) {
+    try {
+        console.log(`Pobieranie obrazów dla sesji ${sessionId}...`);
+        // Ta funkcja może być pusta, jeśli loadSessionSummary już pobiera obrazy
+        // lub możesz tu dodać własną logikę pobierania obrazów
+    } catch (error) {
+        console.error('Błąd podczas pobierania obrazów:', error);
+    }
 }
