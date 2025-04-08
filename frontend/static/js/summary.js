@@ -527,8 +527,9 @@ function renderWealthChart(rounds) {
     }
 
     // Przygotowanie danych
-    const labels = rounds.map((_, index) => `Runda ${index + 1}`);
-    const wealthData = [];
+    // Dodajemy rundę "zerową", od której startujemy
+    const labels = ['Runda 0', ...rounds.map((_, index) => `Runda ${index + 1}`)];
+    const wealthData = [0]; // Zaczynamy od 0% (początkowy stan)
     let cumulativeWealth = 1.0; // Zaczynamy od 1.0 (100%)
     
     for (const round of rounds) {
