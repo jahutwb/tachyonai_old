@@ -351,7 +351,7 @@ async function loadNextRound() {
     }
 }
 
-// Inicjalizacja i przetwarzanie wyboru kurtyny
+// Funkcja do obsługi wyboru kurtyny
 async function selectCurtain(side) {
     if (GameState.isWaitingForPriceChange) {
         console.warn('Już oczekujemy na zmianę ceny, ignoruję kliknięcie');
@@ -381,8 +381,13 @@ async function selectCurtain(side) {
         GameState.startPrice = startPrice;
         GameState.isWaitingForPriceChange = true;  // Ustawiamy flagę czekania na true
         
-        // Wyślij wybór do serwera
-        const response = await fetchWithAuth('/api/rounds/choice', {
+        // Ustawienie timeout na 15 sekund aby zapobiec zawieszeniu w razie problemów z API
+        const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Przekroczono czas oczekiwania na odpowiedź serwera')), 15000)
+        );
+        
+        // Próba wysłania wyboru z timeout
+        const fetchPromise = fetchWithAuth('/api/rounds/choice', {
             method: 'POST',
             body: JSON.stringify({
                 round_id: GameState.currentRound.id,
@@ -390,6 +395,9 @@ async function selectCurtain(side) {
                 side: side
             })
         });
+        
+        // Wyścig między normalnym fetch a timeout
+        const response = await Promise.race([fetchPromise, timeoutPromise]);
         
         if (!response.ok) {
             throw new Error(`Błąd wysyłania wyboru: ${response.status} ${response.statusText}`);
@@ -422,6 +430,15 @@ async function selectCurtain(side) {
     } catch (error) {
         console.error('Błąd podczas przetwarzania wyboru:', error);
         GameState.isWaitingForPriceChange = false;  // Reset flagi czekania w przypadku błędu
+        
+        // Przywróć UI do stanu początkowego
+        const leftCurtain = document.getElementById('left-curtain');
+        const rightCurtain = document.getElementById('right-curtain');
+        if (leftCurtain) leftCurtain.classList.remove('curtain-expanded', 'curtain-hidden');
+        if (rightCurtain) rightCurtain.classList.remove('curtain-expanded', 'curtain-hidden');
+        
+        // Pokaż komunikat o błędzie
+        alert('Wystąpił błąd podczas przetwarzania wyboru. Spróbuj ponownie.');
         hideLoadingOverlay();
     }
 }
