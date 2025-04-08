@@ -6,11 +6,14 @@ import logging
 from sqlalchemy import func
 import numpy as np
 import random
+import json
+from datetime import datetime
 
 from ..database import get_db
 from ..models import User, Session as SessionModel, Round, Image
 from .. import schemas
 from ..auth import get_current_user
+from ..schemas import SessionResponse
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -20,88 +23,96 @@ logger = logging.getLogger(__name__)
 def create_session(
     current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ):
-    """Tworzy nową sesję dla zalogowanego użytkownika."""
+    """
+    Tworzy nową sesję dla użytkownika lub wznawia istniejącą.
+    Logika:
+    1. Sprawdza czy istnieje aktywna sesja - jeśli tak, zwraca ją
+    2. Sprawdza czy istnieje sesja PENDING - jeśli tak, aktywuje ją
+    3. Sprawdza czy istnieje zakończona sesja - jeśli tak, generuje nową pulę algorytmem quasi-genetycznym
+    4. Jeśli nie ma żadnej sesji, tworzy nową z losową pulą
+    """
     try:
-        # Sprawdź, czy użytkownik ma już sesję w stanie INACTIVE (wygenerowaną przez algorytm quasi-genetyczny)
-        inactive_session = db.query(SessionModel).filter(
+        # 1. Sprawdź czy istnieje aktywna sesja
+        active_session = db.query(SessionModel).filter(
             SessionModel.user_id == current_user.id,
-            SessionModel.status == "INACTIVE"
-        ).order_by(SessionModel.id.desc()).first()
+            SessionModel.status == "ACTIVE"
+        ).first()
         
-        if inactive_session:
-            logger.info(f"Znaleziono sesję w stanie INACTIVE (id={inactive_session.id}) dla użytkownika {current_user.id}, aktywuję ją")
-            inactive_session.status = "ACTIVE"
-            db.commit()
-            db.refresh(inactive_session)
-            return inactive_session
+        if active_session:
+            logger.info(f"Znaleziono aktywną sesję {active_session.id} dla użytkownika {current_user.id}")
+            # Sprawdź czy pule są puste
+            if not active_session.pos_pool_json or not active_session.neg_pool_json:
+                logger.info(f"Pule są puste, generuję nową pulę")
+                pos_pool_json, neg_pool_json = generate_random_pool(db, 6)
+                active_session.pos_pool_json = pos_pool_json
+                active_session.neg_pool_json = neg_pool_json
+                active_session.remaining_pairs = 6
+                db.commit()
+                db.refresh(active_session)
+            return active_session
             
-        # Sprawdź, czy użytkownik ma poprzednią zakończoną sesję
-        previous_session = db.query(SessionModel).filter(
+        # 2. Sprawdź czy istnieje sesja PENDING
+        pending_session = db.query(SessionModel).filter(
+            SessionModel.user_id == current_user.id,
+            SessionModel.status == "PENDING"
+        ).first()
+        
+        if pending_session:
+            logger.info(f"Znaleziono sesję PENDING {pending_session.id}, aktywuję ją")
+            pending_session.status = "ACTIVE"
+            pending_session.started_at = datetime.utcnow()
+            db.commit()
+            db.refresh(pending_session)
+            return pending_session
+            
+        # 3. Sprawdź czy istnieje zakończona sesja
+        completed_session = db.query(SessionModel).filter(
             SessionModel.user_id == current_user.id,
             SessionModel.status == "COMPLETED"
-        ).order_by(SessionModel.id.desc()).first()
+        ).order_by(SessionModel.ended_at.desc()).first()
         
-        pos_pool_json = []
-        neg_pool_json = []
+        if completed_session:
+            logger.info(f"Znaleziono zakończoną sesję {completed_session.id}, generuję nową pulę")
+            pos_pool_json, neg_pool_json = generate_pool_with_genetic_algorithm(completed_session, db)
+            
+            new_session = SessionModel(
+                user_id=current_user.id,
+                status="ACTIVE",  # Od razu aktywna
+                pos_pool_json=pos_pool_json,
+                neg_pool_json=neg_pool_json,
+                session_profit_factor=1.0,
+                remaining_pairs=6,
+                started_at=datetime.utcnow()
+            )
+            db.add(new_session)
+            db.commit()
+            db.refresh(new_session)
+            return new_session
+            
+        # 4. Jeśli nie ma żadnej sesji, utwórz nową z losową pulą
+        logger.info(f"Brak poprzednich sesji, tworzę nową z losową pulą")
+        pos_pool_json, neg_pool_json = generate_random_pool(db, 6)
         
-        if previous_session:
-            logger.info(f"Znaleziono poprzednią zakończoną sesję id={previous_session.id} dla użytkownika {current_user.id}, generowanie puli metodą quasi-genetyczną")
-            # Uruchom algorytm quasi-genetyczny do generowania nowej puli
-            pos_pool_json, neg_pool_json = generate_pool_with_genetic_algorithm(previous_session, db)
-            logger.info(f"Wygenerowano nową pulę: {len(pos_pool_json)} pozytywnych i {len(neg_pool_json)} negatywnych bodźców")
-        else:
-            logger.info(f"Brak poprzedniej zakończonej sesji dla użytkownika {current_user.id}, generowanie losowej puli")
-            # Brak poprzedniej sesji - wygeneruj losową pulę
-            pos_images = db.query(Image).filter(Image.type == "POSITIVE").order_by(func.random()).limit(6).all()
-            neg_images = db.query(Image).filter(Image.type == "NEGATIVE").order_by(func.random()).limit(6).all()
-            
-            if len(pos_images) < 6 or len(neg_images) < 6:
-                logger.error(f"Niewystarczająca liczba obrazów w bazie danych. Znaleziono: {len(pos_images)} pozytywnych, {len(neg_images)} negatywnych")
-                raise HTTPException(status_code=500, detail="Niewystarczająca liczba obrazów w bazie danych")
-                
-            # Przygotuj struktury JSON dla pul obrazów
-            pos_pool_json = []
-            for img in pos_images:
-                pos_pool_json.append({
-                    "id": img.id,
-                    "successes": 0,
-                    "failures": 0,
-                    "origin": "random"
-                })
-                
-            neg_pool_json = []
-            for img in neg_images:
-                neg_pool_json.append({
-                    "id": img.id,
-                    "successes": 0,
-                    "failures": 0,
-                    "origin": "random"
-                })
-            
-            logger.info(f"Wygenerowano losową pulę: {len(pos_pool_json)} pozytywnych i {len(neg_pool_json)} negatywnych bodźców")
-            
-        # Utwórz sesję z przygotowanymi pulami obrazów
-        session = SessionModel(
+        new_session = SessionModel(
             user_id=current_user.id,
             status="ACTIVE",
             pos_pool_json=pos_pool_json,
             neg_pool_json=neg_pool_json,
             session_profit_factor=1.0,
-            remaining_pairs=6
+            remaining_pairs=6,
+            started_at=datetime.utcnow()
         )
-        
-        db.add(session)
+        db.add(new_session)
         db.commit()
-        db.refresh(session)
-        logger.info(f"Utworzono nową sesję id={session.id} dla użytkownika {current_user.id} z pulą {len(pos_pool_json)} pozytywnych i {len(neg_pool_json)} negatywnych obrazów")
-        return session
-    except HTTPException:
-        raise
+        db.refresh(new_session)
+        
+        return new_session
+            
     except Exception as e:
-        logger.error(f"Błąd podczas tworzenia sesji: {str(e)}")
+        logger.error(f"Błąd podczas tworzenia/wznawiania sesji: {str(e)}")
         logger.error(traceback.format_exc())
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Błąd serwera: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/sessions/{session_id}", response_model=schemas.Session)
@@ -477,13 +488,6 @@ def find_nearest_embedding(target_embedding: List[float], all_embeddings: List[T
 def generate_pool_with_genetic_algorithm(previous_session: SessionModel, db: Session) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """
     Implementacja algorytmu quasi-genetycznego do generowania nowej puli obrazów.
-    
-    Args:
-        previous_session: Obiekt poprzedniej sesji
-        db: Obiekt sesji bazy danych
-        
-    Returns:
-        Tuple (pos_pool_json, neg_pool_json) zawierające nowe pule obrazów
     """
     try:
         num_pairs = 6  # Liczba par obrazów w puli
@@ -491,8 +495,8 @@ def generate_pool_with_genetic_algorithm(previous_session: SessionModel, db: Ses
         logger.info(f"Przetwarzam sesję id={previous_session.id}, status={previous_session.status}")
         
         # 1. Pobranie danych z poprzedniej sesji
-        pos_pool_prev = previous_session.pos_pool_json
-        neg_pool_prev = previous_session.neg_pool_json
+        pos_pool_prev = json.loads(previous_session.pos_pool_json)
+        neg_pool_prev = json.loads(previous_session.neg_pool_json)
         
         if not pos_pool_prev or not neg_pool_prev:
             logger.warning(f"[BŁĄD GENETYCZNY] Brak danych w puli poprzedniej sesji {previous_session.id}")
@@ -630,6 +634,7 @@ def generate_pool_with_genetic_algorithm(previous_session: SessionModel, db: Ses
             # Jeśli nie zapełniliśmy puli, generujemy dzieci
             num_children_needed = num_pairs - len(bought_pos)
             if num_children_needed > 0 and bought_pos:
+                logger.info(f"Generuję {num_children_needed} dzieci dla pozytywnych bodźców")
                 # Generowanie dzieci od najlepszych rodziców
                 pos_children = generate_children(
                     bought_pos, 
@@ -642,10 +647,12 @@ def generate_pool_with_genetic_algorithm(previous_session: SessionModel, db: Ses
                 )
                 
                 new_pos_pool.extend(pos_children)
+                logger.info(f"Wygenerowano {len(pos_children)} dzieci dla pozytywnych bodźców")
                 
             # Jeśli wciąż brakuje obrazów, uzupełniamy losowymi
             if len(new_pos_pool) < num_pairs:
                 random_count = num_pairs - len(new_pos_pool)
+                logger.info(f"Uzupełniam {random_count} losowymi pozytywnymi bodźcami")
                 random_pos = get_random_images(db, "POSITIVE", random_count, exclude_ids=pos_ids + [item["id"] for item in new_pos_pool])
                 
                 for img_id in random_pos:
@@ -657,6 +664,7 @@ def generate_pool_with_genetic_algorithm(previous_session: SessionModel, db: Ses
                     })
         else:
             # Przypadek B: S <= num_pairs
+            logger.info(f"Przypadek B (pos): S <= num_pairs, generuję dzieci")
             # Generujemy tyle dzieci, ile wynosi S
             # Najpierw dodajemy wszystkie obrazy z rankingu jako "bought"
             for img_id, _ in pos_ranking:
@@ -670,6 +678,7 @@ def generate_pool_with_genetic_algorithm(previous_session: SessionModel, db: Ses
             # Generujemy dzieci na podstawie obrazów z rankingu
             num_children = pos_total_successes if pos_ranking else 0
             if num_children > 0:
+                logger.info(f"Generuję {num_children} dzieci dla pozytywnych bodźców")
                 parent_ids = [img_id for img_id, _ in pos_ranking]
                 pos_children = generate_children(
                     parent_ids, 
@@ -682,10 +691,12 @@ def generate_pool_with_genetic_algorithm(previous_session: SessionModel, db: Ses
                 )
                 
                 new_pos_pool.extend(pos_children)
+                logger.info(f"Wygenerowano {len(pos_children)} dzieci dla pozytywnych bodźców")
             
             # Jeśli wciąż brakuje obrazów, uzupełniamy losowymi
             if len(new_pos_pool) < num_pairs:
                 random_count = num_pairs - len(new_pos_pool)
+                logger.info(f"Uzupełniam {random_count} losowymi pozytywnymi bodźcami")
                 random_pos = get_random_images(db, "POSITIVE", random_count, exclude_ids=pos_ids + [item["id"] for item in new_pos_pool])
                 
                 for img_id in random_pos:
@@ -699,6 +710,7 @@ def generate_pool_with_genetic_algorithm(previous_session: SessionModel, db: Ses
         # 6.2 Negatywne bodźce - analogicznie jak dla pozytywnych
         # Łączna liczba sukcesów (przetrwań)
         neg_total_successes = sum(successes for _, successes in neg_ranking)
+        logger.info(f"Łączna liczba sukcesów negatywnych: {neg_total_successes}")
         
         # Strategia zależna od liczby sukcesów
         if neg_total_successes > num_pairs:
@@ -728,6 +740,7 @@ def generate_pool_with_genetic_algorithm(previous_session: SessionModel, db: Ses
             # Jeśli nie zapełniliśmy puli, generujemy dzieci
             num_children_needed = num_pairs - len(bought_neg)
             if num_children_needed > 0 and bought_neg:
+                logger.info(f"Generuję {num_children_needed} dzieci dla negatywnych bodźców")
                 # Generowanie dzieci od najlepszych rodziców
                 neg_children = generate_children(
                     bought_neg, 
@@ -740,10 +753,12 @@ def generate_pool_with_genetic_algorithm(previous_session: SessionModel, db: Ses
                 )
                 
                 new_neg_pool.extend(neg_children)
+                logger.info(f"Wygenerowano {len(neg_children)} dzieci dla negatywnych bodźców")
                 
             # Jeśli wciąż brakuje obrazów, uzupełniamy losowymi
             if len(new_neg_pool) < num_pairs:
                 random_count = num_pairs - len(new_neg_pool)
+                logger.info(f"Uzupełniam {random_count} losowymi negatywnymi bodźcami")
                 random_neg = get_random_images(db, "NEGATIVE", random_count, exclude_ids=neg_ids + [item["id"] for item in new_neg_pool])
                 
                 for img_id in random_neg:
@@ -755,6 +770,7 @@ def generate_pool_with_genetic_algorithm(previous_session: SessionModel, db: Ses
                     })
         else:
             # Przypadek B: S <= num_pairs
+            logger.info(f"Przypadek B (neg): S <= num_pairs, generuję dzieci")
             # Generujemy tyle dzieci, ile wynosi S
             # Najpierw dodajemy wszystkie obrazy z rankingu jako "bought"
             for img_id, _ in neg_ranking:
@@ -768,6 +784,7 @@ def generate_pool_with_genetic_algorithm(previous_session: SessionModel, db: Ses
             # Generujemy dzieci na podstawie obrazów z rankingu
             num_children = neg_total_successes if neg_ranking else 0
             if num_children > 0:
+                logger.info(f"Generuję {num_children} dzieci dla negatywnych bodźców")
                 parent_ids = [img_id for img_id, _ in neg_ranking]
                 neg_children = generate_children(
                     parent_ids, 
@@ -780,10 +797,12 @@ def generate_pool_with_genetic_algorithm(previous_session: SessionModel, db: Ses
                 )
                 
                 new_neg_pool.extend(neg_children)
+                logger.info(f"Wygenerowano {len(neg_children)} dzieci dla negatywnych bodźców")
             
             # Jeśli wciąż brakuje obrazów, uzupełniamy losowymi
             if len(new_neg_pool) < num_pairs:
                 random_count = num_pairs - len(new_neg_pool)
+                logger.info(f"Uzupełniam {random_count} losowymi negatywnymi bodźcami")
                 random_neg = get_random_images(db, "NEGATIVE", random_count, exclude_ids=neg_ids + [item["id"] for item in new_neg_pool])
                 
                 for img_id in random_neg:
@@ -822,8 +841,25 @@ def generate_pool_with_genetic_algorithm(previous_session: SessionModel, db: Ses
                     "origin": "random"
                 })
                 
-        logger.info(f"Zakończono generowanie puli metodą quasi-genetyczną: "
-                   f"{len(new_pos_pool)} pozytywnych bodźców, {len(new_neg_pool)} negatywnych bodźców")
+        # Podsumowanie statystyk nowej puli
+        pos_stats = {
+            "total": len(new_pos_pool),
+            "bought": sum(1 for item in new_pos_pool if item["origin"] == "bought"),
+            "children": sum(1 for item in new_pos_pool if item["origin"] == "child"),
+            "random": sum(1 for item in new_pos_pool if item["origin"] == "random")
+        }
+        
+        neg_stats = {
+            "total": len(new_neg_pool),
+            "bought": sum(1 for item in new_neg_pool if item["origin"] == "bought"),
+            "children": sum(1 for item in new_neg_pool if item["origin"] == "child"),
+            "random": sum(1 for item in new_neg_pool if item["origin"] == "random")
+        }
+        
+        logger.info(f"===== PODSUMOWANIE NOWEJ PULI =====")
+        logger.info(f"Pozytywne bodźce: {pos_stats}")
+        logger.info(f"Negatywne bodźce: {neg_stats}")
+        logger.info(f"===== KONIEC GENEROWANIA PULI =====")
                 
         return new_pos_pool, new_neg_pool
     
@@ -1099,4 +1135,107 @@ def generate_new_pool_for_session(
         logger.error(f"Błąd podczas generowania nowej puli: {str(e)}")
         logger.error(traceback.format_exc())
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Błąd serwera: {str(e)}") 
+        raise HTTPException(status_code=500, detail=f"Błąd serwera: {str(e)}")
+
+
+@router.put("/sessions/{session_id}/activate", response_model=SessionResponse)
+async def activate_session(
+    session_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> SessionResponse:
+    """
+    Aktywuje sesję w statusie PENDING.
+    """
+    try:
+        # Znajdź sesję w statusie PENDING
+        session = db.query(SessionModel).filter(
+            SessionModel.id == session_id,
+            SessionModel.user_id == current_user.id,
+            SessionModel.status == "PENDING"
+        ).first()
+        
+        if not session:
+            raise HTTPException(
+                status_code=404,
+                detail="Nie znaleziono sesji w statusie PENDING"
+            )
+            
+        # Zmień status na ACTIVE
+        session.status = "ACTIVE"
+        session.started_at = datetime.utcnow()
+        
+        db.commit()
+        db.refresh(session)
+        
+        return SessionResponse.from_orm(session)
+        
+    except Exception as e:
+        logger.error(f"Błąd podczas aktywacji sesji: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(
+            status_code=500,
+            detail="Wystąpił błąd podczas aktywacji sesji"
+        )
+
+
+@router.get("/sessions/{session_id}/pool-status", response_model=dict)
+def get_pool_status(session_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """
+    Sprawdza status sesji i zwraca informacje o następnej sesji (jeśli istnieje).
+    """
+    try:
+        # Znajdź aktualną sesję
+        current_session = db.query(SessionModel).filter(
+            SessionModel.id == session_id,
+            SessionModel.user_id == current_user.id
+        ).first()
+        
+        if not current_session:
+            raise HTTPException(status_code=404, detail="Nie znaleziono sesji")
+            
+        # Sprawdź czy istnieje następna sesja
+        next_session = db.query(SessionModel).filter(
+            SessionModel.user_id == current_user.id,
+            SessionModel.id > session_id
+        ).order_by(SessionModel.id.asc()).first()
+        
+        if next_session:
+            # Przeanalizuj pule następnej sesji
+            pos_pool = json.loads(next_session.pos_pool_json)
+            neg_pool = json.loads(next_session.neg_pool_json)
+            
+            # Policz statystyki
+            pos_stats = {
+                "total": len(pos_pool),
+                "bought": sum(1 for item in pos_pool if item["origin"] == "bought"),
+                "children": sum(1 for item in pos_pool if item["origin"] == "child"),
+                "random": sum(1 for item in pos_pool if item["origin"] == "random")
+            }
+            
+            neg_stats = {
+                "total": len(neg_pool),
+                "bought": sum(1 for item in neg_pool if item["origin"] == "bought"),
+                "children": sum(1 for item in neg_pool if item["origin"] == "child"),
+                "random": sum(1 for item in neg_pool if item["origin"] == "random")
+            }
+            
+            return {
+                "has_next_session": True,
+                "next_session_id": next_session.id,
+                "next_session_status": next_session.status,
+                "pos_pool": pos_stats,
+                "neg_pool": neg_stats
+            }
+        else:
+            return {
+                "has_next_session": False,
+                "next_session_id": None,
+                "next_session_status": None,
+                "pos_pool": None,
+                "neg_pool": None
+            }
+            
+    except Exception as e:
+        logger.error(f"Błąd podczas sprawdzania statusu puli: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e)) 

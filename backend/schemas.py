@@ -139,7 +139,7 @@ class RoundBase(BaseModel):
     round_number: int
     pos_image_id: int
     neg_image_id: int
-    user_choice_side: SideEnum
+    user_choice_side: Optional[SideEnum] = None
 
 
 class RoundCreate(BaseModel):
@@ -164,7 +164,7 @@ class RoundUpdate(BaseModel):
 
 class RoundResponse(RoundBase):
     id: int
-    user_action: ActionEnum
+    user_action: Optional[ActionEnum] = None
     start_price: float
     end_price: Optional[float] = None
     profit_fraction: Optional[float] = None
