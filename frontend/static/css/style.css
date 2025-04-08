@@ -699,6 +699,26 @@ a:hover {
     margin-bottom: 4px;
 }
 
+.pool-stats-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-md);
+    margin-top: var(--spacing-sm);
+}
+
+.pool-stats-column {
+    flex: 1;
+    min-width: 180px;
+    background-color: rgba(0, 0, 0, 0.2);
+    padding: var(--spacing-sm);
+    border-radius: var(--border-radius);
+}
+
+.pool-stats-column h5 {
+    color: var(--accent-color-light);
+    margin-bottom: var(--spacing-sm);
+}
+
 /* Reaktywne style */
 @media (max-width: 768px) {
     .navbar-menu {

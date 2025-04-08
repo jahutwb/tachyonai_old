@@ -204,6 +204,17 @@ class NextPoolStats(BaseModel):
     bought_count: int
     child_count: int
     message: str
+    
+    # Dodatkowe statystyki z podziałem na pozytywne i negatywne
+    pos_total: int = 0
+    pos_random: int = 0
+    pos_bought: int = 0
+    pos_child: int = 0
+    
+    neg_total: int = 0
+    neg_random: int = 0
+    neg_bought: int = 0
+    neg_child: int = 0
 
 
 class Image(BaseModel):

@@ -963,17 +963,44 @@ function displayPoolStatistics(data) {
     }
     
     // Przygotuj statystyki do wyświetlenia
+    const totalCount = data.total_count || 0;
     const boughtCount = data.bought_count || 0;
-    const generatedCount = data.generated_count || 0;
+    const generatedCount = data.child_count || 0;
     const randomCount = data.random_count || 0;
+    
+    // Przygotuj statystyki z podziałem na pozytywne i negatywne
+    const posCount = data.pos_total || Math.floor(totalCount / 2) || 0;
+    const negCount = data.neg_total || Math.floor(totalCount / 2) || 0;
+    
+    const posBoughtCount = data.pos_bought || Math.floor(boughtCount / 2) || 0;
+    const negBoughtCount = data.neg_bought || Math.floor(boughtCount / 2) || 0;
+    
+    const posGenCount = data.pos_child || Math.floor(generatedCount / 2) || 0;
+    const negGenCount = data.neg_child || Math.floor(generatedCount / 2) || 0;
+    
+    const posRandomCount = data.pos_random || Math.floor(randomCount / 2) || 0;
+    const negRandomCount = data.neg_random || Math.floor(randomCount / 2) || 0;
     
     const statsHTML = `
         <h4>Statystyki nowej puli:</h4>
-        <ul>
-            <li>Kupione bodźce: ${boughtCount}</li>
-            <li>Wygenerowane bodźce: ${generatedCount}</li>
-            <li>Losowe bodźce: ${randomCount}</li>
-        </ul>
+        <div class="pool-stats-grid">
+            <div class="pool-stats-column">
+                <h5>Bodźce pozytywne (${posCount}):</h5>
+                <ul>
+                    <li>Kupione: ${posBoughtCount}</li>
+                    <li>Wygenerowane: ${posGenCount}</li>
+                    <li>Losowe: ${posRandomCount}</li>
+                </ul>
+            </div>
+            <div class="pool-stats-column">
+                <h5>Bodźce negatywne (${negCount}):</h5>
+                <ul>
+                    <li>Kupione: ${negBoughtCount}</li>
+                    <li>Wygenerowane: ${negGenCount}</li>
+                    <li>Losowe: ${negRandomCount}</li>
+                </ul>
+            </div>
+        </div>
     `;
     
     statsContainer.innerHTML = statsHTML;

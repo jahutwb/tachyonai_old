@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 import random
 import logging
 import traceback
+import json
 from sqlalchemy.sql import func
 from typing import Dict, List, Optional
 
@@ -58,8 +59,23 @@ def get_next_round(
         
         try:
             # Filtruj pule obrazów - tylko failures=0
-            valid_pos_pool = [item for item in session.pos_pool_json if item.get("failures", 0) == 0]
-            valid_neg_pool = [item for item in session.neg_pool_json if item.get("failures", 0) == 0]
+            try:
+                # Bezpieczne przetwarzanie JSON
+                pos_pool_json = json.loads(session.pos_pool_json) if isinstance(session.pos_pool_json, str) else session.pos_pool_json
+                neg_pool_json = json.loads(session.neg_pool_json) if isinstance(session.neg_pool_json, str) else session.neg_pool_json
+                
+                # Zabezpieczenie przed None
+                if pos_pool_json is None:
+                    pos_pool_json = []
+                if neg_pool_json is None:
+                    neg_pool_json = []
+                    
+                valid_pos_pool = [item for item in pos_pool_json if item.get("failures", 0) == 0]
+                valid_neg_pool = [item for item in neg_pool_json if item.get("failures", 0) == 0]
+            except Exception as json_error:
+                logger.error(f"Błąd przetwarzania JSON: {str(json_error)}")
+                valid_pos_pool = []
+                valid_neg_pool = []
 
             logger.info(f"Stan pul po filtrowaniu (tylko failures=0):")
             logger.info(f"Pozytywne: {[(item['id'], item.get('failures', 0)) for item in valid_pos_pool]}")
@@ -175,12 +191,23 @@ def submit_round_choice(
         end_price = round_obj.start_price * (1 + price_change)
         
         # Przygotuj kopie JSON-ów z puli
-        pos_pool = session.pos_pool_json.copy() if session.pos_pool_json else []
-        neg_pool = session.neg_pool_json.copy() if session.neg_pool_json else []
-        
-        logger.info("Stan pul przed aktualizacją:")
-        logger.info(f"Pozytywna: {[(i['id'], i.get('failures', 0), i.get('successes', 0)) for i in pos_pool]}")
-        logger.info(f"Negatywna: {[(i['id'], i.get('failures', 0), i.get('successes', 0)) for i in neg_pool]}")
+        try:
+            pos_pool = json.loads(session.pos_pool_json) if isinstance(session.pos_pool_json, str) else session.pos_pool_json
+            neg_pool = json.loads(session.neg_pool_json) if isinstance(session.neg_pool_json, str) else session.neg_pool_json
+            
+            # Zabezpieczenie przed None
+            if pos_pool is None:
+                pos_pool = []
+            if neg_pool is None:
+                neg_pool = []
+                
+            logger.info("Stan pul przed aktualizacją:")
+            logger.info(f"Pozytywna: {[(i['id'], i.get('failures', 0), i.get('successes', 0)) for i in pos_pool]}")
+            logger.info(f"Negatywna: {[(i['id'], i.get('failures', 0), i.get('successes', 0)) for i in neg_pool]}")
+        except Exception as e:
+            logger.error(f"Błąd przy odczycie JSON pool: {str(e)}")
+            pos_pool = []
+            neg_pool = []
         
         # Oblicz wynik i zaktualizuj pule
         if (user_action == "BUY" and price_change > 0) or (user_action == "SELL" and price_change < 0):
@@ -214,16 +241,46 @@ def submit_round_choice(
                     item["failures"] = item.get("failures", 0) + 1
                     logger.info(f"FAILURE: Zwiększam failures dla neg_image {item['id']}: {item['failures']}")
             
-            # Zmniejsz remaining_pairs
-            session.remaining_pairs -= 1
+            # Nie zmniejszamy już ręcznie remaining_pairs, będzie to obliczone później dynamicznie
         
         logger.info("Stan pul po aktualizacji:")
         logger.info(f"Pozytywna: {[(i['id'], i.get('failures', 0), i.get('successes', 0)) for i in pos_pool]}")
         logger.info(f"Negatywna: {[(i['id'], i.get('failures', 0), i.get('successes', 0)) for i in neg_pool]}")
         
-        # Zapisz zaktualizowane pule z powrotem do sesji
+        # Aktualizuj sesję - wymuszamy wykrycie zmian w polach JSON
+        session.session_profit_factor *= (1 + profit_fraction)
+        
+        # Aktualizujemy pola JSON w sesji - bezpośrednie przypisanie
         session.pos_pool_json = pos_pool
         session.neg_pool_json = neg_pool
+        
+        # Oznaczamy pola jako zmodyfikowane
+        from sqlalchemy.orm import attributes
+        attributes.flag_modified(session, "pos_pool_json")
+        attributes.flag_modified(session, "neg_pool_json")
+        
+        # Sprawdź liczbę dostępnych par (liczba obrazów z failures=0)
+        valid_pos_pool = [item for item in pos_pool if item.get("failures", 0) == 0]
+        valid_neg_pool = [item for item in neg_pool if item.get("failures", 0) == 0]
+        
+        available_pairs = min(len(valid_pos_pool), len(valid_neg_pool))
+        logger.info(f"Dostępne pary po aktualizacji: {available_pairs} (valid_pos: {len(valid_pos_pool)}, valid_neg: {len(valid_neg_pool)})")
+        
+        # Aktualizuj remaining_pairs na podstawie rzeczywistej liczby dostępnych par
+        session.remaining_pairs = available_pairs
+        
+        # Zakończ sesję, tylko jeśli nie ma dostępnych par
+        if available_pairs <= 0:
+            session.status = "COMPLETED"
+            session.ended_at = func.now()
+            logger.info(f"Kończę sesję {session.id} - brak dostępnych par")
+        
+        # Zapisz wszystkie zmiany w jednej transakcji
+        db.commit()
+        
+        # Odśwież wszystkie obiekty
+        db.refresh(session)
+        db.refresh(round_obj)
         
         # Aktualizuj statystyki obrazów w bazie
         pos_image = db.query(Image).filter(Image.id == round_obj.pos_image_id).first()
@@ -247,36 +304,9 @@ def submit_round_choice(
         round_obj.result = result
         round_obj.completed_at = func.now()
         
-        # Aktualizuj sesję - wymuszamy wykrycie zmian w polach JSON
-        session.session_profit_factor *= (1 + profit_fraction)
-        
-        # Wymuszamy wykrycie zmian w polach JSON przez SQLAlchemy
-        from sqlalchemy import event
-        from sqlalchemy.orm import attributes
-        
-        # Aktualizujemy pola JSON i wymuszamy oznaczenie jako zmienione
-        session.pos_pool_json = None  # Najpierw ustawiamy na None
-        session.neg_pool_json = None  # Najpierw ustawiamy na None
-        db.flush()  # Wymuszamy flush zmian
-        
-        # Teraz ustawiamy właściwe wartości
-        session.pos_pool_json = pos_pool
-        session.neg_pool_json = neg_pool
-        attributes.flag_modified(session, "pos_pool_json")
-        attributes.flag_modified(session, "neg_pool_json")
-        
-        if session.remaining_pairs <= 0:
-            session.status = "COMPLETED"
-            session.ended_at = func.now()
-        
-        # Zapisz wszystkie zmiany w jednej transakcji
+        # Zapisz zmiany w rundzie
         db.commit()
-        
-        # Odśwież wszystkie obiekty
-        db.refresh(session)
         db.refresh(round_obj)
-        db.refresh(pos_image)
-        db.refresh(neg_image)
         
         # Pobierz URL obrazka bodźca
         stimulus = db.query(Image).filter(Image.id == stimulus_id).first()

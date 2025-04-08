@@ -1,9 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from typing import List, Any, Dict, Tuple
 from sqlalchemy.orm import Session
 import traceback
 import logging
-from sqlalchemy import func
 import numpy as np
 import random
 import json
@@ -61,6 +60,8 @@ def create_session(
             logger.info(f"Znaleziono sesję PENDING {pending_session.id}, aktywuję ją")
             pending_session.status = "ACTIVE"
             pending_session.started_at = datetime.utcnow()
+            pending_session.session_profit_factor = 1.0  # Resetujemy do 1.0
+            pending_session.remaining_pairs = 6  # Upewniamy się, że mamy 6 par
             db.commit()
             db.refresh(pending_session)
             return pending_session
@@ -92,6 +93,12 @@ def create_session(
         # 4. Jeśli nie ma żadnej sesji, utwórz nową z losową pulą
         logger.info(f"Brak poprzednich sesji, tworzę nową z losową pulą")
         pos_pool_json, neg_pool_json = generate_random_pool(db, 6)
+        
+        # Dodatkowe zabezpieczenie przed nieprawidłowymi danymi JSON
+        if not pos_pool_json or not neg_pool_json:
+            logger.warning("Pule obrazów są puste, używam pustych list")
+            pos_pool_json = []
+            neg_pool_json = []
         
         new_session = SessionModel(
             user_id=current_user.id,
@@ -364,6 +371,7 @@ def get_next_pool_stats(
     session_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
     """Pobiera statystyki puli dla następnej sesji, która może być w trakcie generowania."""
     try:
@@ -380,9 +388,10 @@ def get_next_pool_stats(
             SessionModel.status == "PENDING"
         ).order_by(SessionModel.id.desc()).first()
         
-        # Jeśli nie ma jeszcze wygenerowanej sesji PENDING, generujemy nową w tle
+        # Jeśli nie ma jeszcze wygenerowanej sesji PENDING, zwracamy informację, że pula nie jest jeszcze gotowa
         if not next_session:
-            # Rozpocznij generowanie w tle (nie czekaj na zakończenie)
+            logger.info(f"Brak sesji PENDING, nie można wygenerować puli dla sesji {session_id}")
+            
             # W tym przypadku zwracamy informację, że pula nie jest jeszcze gotowa
             return {
                 "is_ready": False,
@@ -391,20 +400,81 @@ def get_next_pool_stats(
                 "random_count": 0,
                 "bought_count": 0,
                 "child_count": 0,
-                "message": "Generowanie puli w toku"
+                "pos_total": 0,
+                "pos_random": 0,
+                "pos_bought": 0,
+                "pos_child": 0,
+                "neg_total": 0,
+                "neg_random": 0,
+                "neg_bought": 0,
+                "neg_child": 0,
+                "message": "Brak gotowej puli, należy utworzyć nową sesję"
             }
-            
-        # Jeśli sesja istnieje, przygotuj statystyki
-        pos_pool = next_session.pos_pool_json or []
-        neg_pool = next_session.neg_pool_json or []
         
-        # Zlicz bodźce według pochodzenia
+        # Przygotowanie zmiennych na wypadek błędu
+        pos_pool = []
+        neg_pool = []
+        
+        # Bezpieczne parsowanie JSON puli pozytywnych
+        try:
+            if isinstance(next_session.pos_pool_json, str):
+                pos_pool = json.loads(next_session.pos_pool_json)
+            else:
+                pos_pool = next_session.pos_pool_json if next_session.pos_pool_json is not None else []
+            logger.info(f"Pomyślnie sparsowano JSON pozytywnej puli: {len(pos_pool)} elementów")
+        except json.JSONDecodeError as e:
+            logger.error(f"Błąd parsowania JSON dla pozytywnej puli w sesji {next_session.id}: {str(e)}")
+        except Exception as e:
+            logger.error(f"Nieoczekiwany błąd podczas parsowania JSON pozytywnej puli: {str(e)}")
+        
+        # Bezpieczne parsowanie JSON puli negatywnych
+        try:
+            if isinstance(next_session.neg_pool_json, str):
+                neg_pool = json.loads(next_session.neg_pool_json)
+            else:
+                neg_pool = next_session.neg_pool_json if next_session.neg_pool_json is not None else []
+            logger.info(f"Pomyślnie sparsowano JSON negatywnej puli: {len(neg_pool)} elementów")
+        except json.JSONDecodeError as e:
+            logger.error(f"Błąd parsowania JSON dla negatywnej puli w sesji {next_session.id}: {str(e)}")
+        except Exception as e:
+            logger.error(f"Nieoczekiwany błąd podczas parsowania JSON negatywnej puli: {str(e)}")
+    
+        # Inicjalizacja słowników dla statystyk
         origins = {"random": 0, "bought": 0, "child": 0}
+        pos_origins = {"random": 0, "bought": 0, "child": 0}
+        neg_origins = {"random": 0, "bought": 0, "child": 0}
         
-        for item in pos_pool + neg_pool:
-            origin = item.get("origin", "unknown")
-            if origin in origins:
-                origins[origin] += 1
+        # Oblicz statystyki pozytywnych bodźców
+        for item in pos_pool:
+            try:
+                # Sprawdźmy, czy item jest słownikiem czy listą
+                if isinstance(item, dict):
+                    origin = item.get("origin", "random")  # Domyślnie "random" jeśli pole nie istnieje
+                    if origin in pos_origins:
+                        pos_origins[origin] += 1
+                else:
+                    # Jeśli item nie jest słownikiem, traktujemy go jako dane bez origin (domyślnie random)
+                    pos_origins["random"] += 1
+            except Exception as e:
+                logger.error(f"Błąd podczas analizy pozytywnego bodźca: {str(e)}, item={item}")
+                
+        # Oblicz statystyki negatywnych bodźców
+        for item in neg_pool:
+            try:
+                # Sprawdźmy, czy item jest słownikiem czy listą
+                if isinstance(item, dict):
+                    origin = item.get("origin", "random")  # Domyślnie "random" jeśli pole nie istnieje
+                    if origin in neg_origins:
+                        neg_origins[origin] += 1
+                else:
+                    # Jeśli item nie jest słownikiem, traktujemy go jako dane bez origin (domyślnie random)
+                    neg_origins["random"] += 1
+            except Exception as e:
+                logger.error(f"Błąd podczas analizy negatywnego bodźca: {str(e)}, item={item}")
+        
+        # Sumy ogólne
+        for key in origins:
+            origins[key] = pos_origins[key] + neg_origins[key]
                 
         total_count = len(pos_pool) + len(neg_pool)
                 
@@ -415,15 +485,22 @@ def get_next_pool_stats(
             "random_count": origins["random"],
             "bought_count": origins["bought"],
             "child_count": origins["child"],
+            "pos_total": len(pos_pool),
+            "pos_random": pos_origins["random"],
+            "pos_bought": pos_origins["bought"],
+            "pos_child": pos_origins["child"],
+            "neg_total": len(neg_pool),
+            "neg_random": neg_origins["random"],
+            "neg_bought": neg_origins["bought"],
+            "neg_child": neg_origins["child"],
             "message": "Pula gotowa do użycia"
         }
-        
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Błąd podczas pobierania statystyk puli: {str(e)}")
         logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Błąd serwera: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 def calculate_centroid(embeddings: List[List[float]], weights: List[float] = None) -> List[float]:
@@ -1025,39 +1102,44 @@ def get_random_images(db: Session, image_type: str, count: int, exclude_ids: Lis
     return [img_id for img_id, in results]
 
 
-def generate_random_pool(db: Session, num_pairs: int) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+def generate_random_pool(db: Session, num_pairs: int = 6) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """
-    Generuje losową pulę obrazów.
-    
-    Args:
-        db: Obiekt sesji bazy danych
-        num_pairs: Liczba par obrazów w puli
-        
-    Returns:
-        Tuple (pos_pool_json, neg_pool_json) z losowymi pulami obrazów
+    Generuje losową pulę obrazów dla nowej sesji.
+    Zwraca dwie listy: pozytywne obrazy i negatywne obrazy.
     """
-    pos_ids = get_random_images(db, "POSITIVE", num_pairs)
-    neg_ids = get_random_images(db, "NEGATIVE", num_pairs)
-    
-    pos_pool_json = []
-    for img_id in pos_ids:
-        pos_pool_json.append({
-            "id": img_id,
-            "successes": 0,
-            "failures": 0,
-            "origin": "random"
-        })
+    try:
+        # Pobierz wszystkie obrazy z bazy, które mają zdefiniowany embedding
+        all_images = db.query(Image).filter(Image.embedding.isnot(None)).all()
         
-    neg_pool_json = []
-    for img_id in neg_ids:
-        neg_pool_json.append({
-            "id": img_id,
-            "successes": 0,
-            "failures": 0,
-            "origin": "random"
-        })
+        # Jeśli nie ma wystarczającej liczby obrazów, rzuć wyjątek
+        if len(all_images) < 2 * num_pairs:
+            logger.error(f"Niewystarczająca liczba obrazów w bazie: {len(all_images)}, potrzeba {2 * num_pairs}")
+            return [], []
         
-    return pos_pool_json, neg_pool_json
+        # Podziel na pozytywne i negatywne
+        positive_images = [img for img in all_images if img.type == "POSITIVE"]
+        negative_images = [img for img in all_images if img.type == "NEGATIVE"]
+        
+        # Sprawdź, czy jest wystarczająca liczba obrazów każdego typu
+        if len(positive_images) < num_pairs or len(negative_images) < num_pairs:
+            logger.error(f"Niewystarczająca liczba obrazów: {len(positive_images)} pozytywnych, {len(negative_images)} negatywnych")
+            return [], []
+        
+        # Losowo wybierz obrazy do puli
+        selected_positive = random.sample(positive_images, num_pairs)
+        selected_negative = random.sample(negative_images, num_pairs)
+        
+        # Przygotuj struktury JSON
+        pos_pool = [{"id": img.id, "successes": 0, "failures": 0} for img in selected_positive]
+        neg_pool = [{"id": img.id, "successes": 0, "failures": 0} for img in selected_negative]
+        
+        logger.info(f"Wygenerowano losową pulę: {len(pos_pool)} pozytywnych, {len(neg_pool)} negatywnych")
+        return pos_pool, neg_pool
+    except Exception as e:
+        logger.error(f"Błąd podczas generowania losowej puli: {str(e)}")
+        logger.error(traceback.format_exc())
+        # Zwracamy puste listy zamiast None
+        return [], []
 
 
 @router.post("/sessions/generate-new-pool")
