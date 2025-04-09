@@ -530,8 +530,11 @@ def get_next_pool_stats(
         logger.info(f"Pobieranie statystyk puli dla następnej sesji, na podstawie sesji {session_id}")
         
         # Sprawdź, czy sesja istnieje i należy do bieżącego użytkownika
-        session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
-        if not session or session.user_id != current_user.id:
+        session = db.query(SessionModel).filter(
+            SessionModel.id == session_id,
+            SessionModel.user_id == current_user.id
+        ).first()
+        if not session:
             raise HTTPException(status_code=404, detail="Sesja nie znaleziona lub brak dostępu")
             
         # Sprawdź, czy istnieje już wygenerowana ale nieużyta sesja dla użytkownika
@@ -724,8 +727,8 @@ def generate_pool_with_genetic_algorithm(previous_session: SessionModel, db: Ses
         logger.info(f"Przetwarzam sesję id={previous_session.id}, status={previous_session.status}")
         
         # 1. Pobranie danych z poprzedniej sesji
-        pos_pool_prev = json.loads(previous_session.pos_pool_json)
-        neg_pool_prev = json.loads(previous_session.neg_pool_json)
+        pos_pool_prev = previous_session.pos_pool_json if isinstance(previous_session.pos_pool_json, list) else json.loads(previous_session.pos_pool_json)
+        neg_pool_prev = previous_session.neg_pool_json if isinstance(previous_session.neg_pool_json, list) else json.loads(previous_session.neg_pool_json)
         
         if not pos_pool_prev or not neg_pool_prev:
             logger.warning(f"[BŁĄD GENETYCZNY] Brak danych w puli poprzedniej sesji {previous_session.id}")
@@ -1362,7 +1365,7 @@ def generate_new_pool_for_session(
         # Generujemy nowe pule na podstawie poprzedniej sesji
         pos_pool_json, neg_pool_json = generate_pool_with_genetic_algorithm(previous_session, db)
         
-        # Tworzymy nową sesję w stanie PENDING
+        # Tworzymy nową sesję PENDING z wygenerowaną pulą
         new_session = SessionModel(
             user_id=current_user.id,
             status="PENDING",
@@ -1514,7 +1517,11 @@ async def activate_session(
 
 
 @router.get("/sessions/{session_id}/pool-status", response_model=dict)
-def get_pool_status(session_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def get_pool_status(
+    session_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """
     Sprawdza status sesji i zwraca informacje o następnej sesji (jeśli istnieje).
     """
@@ -1524,7 +1531,6 @@ def get_pool_status(session_id: int, current_user: User = Depends(get_current_us
             SessionModel.id == session_id,
             SessionModel.user_id == current_user.id
         ).first()
-        
         if not current_session:
             raise HTTPException(status_code=404, detail="Nie znaleziono sesji")
             
