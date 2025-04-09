@@ -62,6 +62,15 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     return encoded_jwt
 
 
+def decode_access_token(token: str) -> Optional[dict]:
+    """Dekoduje token JWT bez rzucania wyjątków. Zwraca None w przypadku niepowodzenia."""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return payload
+    except JWTError:
+        return None
+
+
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     """Pobiera bieżącego użytkownika na podstawie tokenu JWT."""
     credentials_exception = HTTPException(

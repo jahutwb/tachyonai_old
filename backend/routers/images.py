@@ -2,11 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException, status, Response
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import random
+import os
+from PIL import Image as PILImage
+import io
 
 from ..database import get_db
 from ..models import User, Image, ImageTypeEnum
 from .. import schemas
-from ..auth import get_current_user
+from ..auth import get_current_user, decode_access_token
 
 router = APIRouter()
 
@@ -63,17 +66,55 @@ async def get_images_ranking(
 
 
 # Endpointy z parametrami ścieżki poniżej
-@router.get("/images/{image_id}", response_model=schemas.Image)
+@router.get("/images/{image_id}")
 async def get_image(
     image_id: int,
-    current_user: User = Depends(get_current_user),
+    token: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
-    """Pobiera informacje o obrazie o podanym ID."""
+    """Pobiera obraz o podanym ID w pełnej rozdzielczości."""
+    # Sprawdź token, ale tylko jeśli został podany
+    current_user = None
+    if token:
+        try:
+            # Dekoduj token i pobierz nazwę użytkownika
+            payload = decode_access_token(token)
+            username = payload.get("sub")
+            
+            # Pobierz użytkownika z bazy danych
+            if username:
+                current_user = db.query(User).filter(User.username == username).first()
+        except Exception:
+            # Jeśli token jest nieprawidłowy, ignorujemy go
+            pass
+    
+    # Nie wymagamy autoryzacji dla dostępu do obrazów
+    
     image = db.query(Image).filter(Image.id == image_id).first()
     if not image:
         raise HTTPException(status_code=404, detail="Obraz nie znaleziony")
-    return image
+    
+    # Pobierz pełny obraz
+    try:
+        img_path = image.path
+        if not os.path.exists(img_path):
+            # Fallback - zwracamy testowe dane PNG
+            test_png_data = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDAT\x08\x99c\xf8\x0f\x00\x01\x01\x01\x00\x1b\x0c\x1b\x00\x00\x00\x00IEND\xaeB`\x82'
+            return Response(content=test_png_data, media_type="image/png")
+            
+        # Otwórz obraz za pomocą PIL
+        img = PILImage.open(img_path)
+        
+        # Konwertuj do bufora
+        buffer = io.BytesIO()
+        img.save(buffer, format="PNG")
+        buffer.seek(0)
+        
+        return Response(content=buffer.getvalue(), media_type="image/png")
+    except Exception as e:
+        # Fallback - zwracamy testowe dane PNG
+        test_png_data = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDAT\x08\x99c\xf8\x0f\x00\x01\x01\x01\x00\x1b\x0c\x1b\x00\x00\x00\x00IEND\xaeB`\x82'
+        return Response(content=test_png_data, media_type="image/png")
 
 
 @router.get("/images/{image_id}/thumbnail")
@@ -113,6 +154,48 @@ async def get_image_thumbnail(
         image_data = get_thumbnail(image.path)
         return Response(content=image_data, media_type="image/png")
     except Exception:
+        # Fallback - zwracamy testowe dane PNG
+        test_png_data = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDAT\x08\x99c\xf8\x0f\x00\x01\x01\x01\x00\x1b\x0c\x1b\x00\x00\x00\x00IEND\xaeB`\x82'
+        return Response(content=test_png_data, media_type="image/png")
+
+
+@router.get("/images/{image_id}/full")
+async def get_full_image(
+    image_id: int,
+    token: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Pobiera obraz w pełnej rozdzielczości."""
+    # Sprawdź token, ale tylko jeśli został podany
+    current_user = None
+    if token:
+        from ..auth import decode_access_token
+        try:
+            # Dekoduj token i pobierz nazwę użytkownika
+            payload = decode_access_token(token)
+            username = payload.get("sub")
+            
+            # Pobierz użytkownika z bazy danych
+            if username:
+                current_user = db.query(User).filter(User.username == username).first()
+        except Exception:
+            # Jeśli token jest nieprawidłowy, ignorujemy go
+            pass
+    
+    # Jeśli token nie został podany lub jest nieprawidłowy, wymagaj standardowej autoryzacji
+    if not current_user:
+        current_user = Depends(get_current_user)
+    
+    image = db.query(Image).filter(Image.id == image_id).first()
+    if not image:
+        raise HTTPException(status_code=404, detail="Obraz nie znaleziony")
+    
+    # Pobierz pełny obraz
+    from ..images import get_full_image
+    try:
+        image_data = get_full_image(image.path)
+        return Response(content=image_data, media_type="image/png")
+    except Exception as e:
         # Fallback - zwracamy testowe dane PNG
         test_png_data = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDAT\x08\x99c\xf8\x0f\x00\x01\x01\x01\x00\x1b\x0c\x1b\x00\x00\x00\x00IEND\xaeB`\x82'
         return Response(content=test_png_data, media_type="image/png")

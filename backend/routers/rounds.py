@@ -326,6 +326,21 @@ def submit_round_choice(
         db.commit()
         logger.info(f"[TIMING] Całkowity czas przetwarzania wyboru: {time.time() - start_time:.3f}s")
         
+        # Pobierz URL obrazka bodźca dla pełnej rozdzielczości
+        stimulus = db.query(Image).filter(Image.id == stimulus_id).first()
+        
+        # Użyj pełnego URL z tokenem, aby obrazek był dostępny bez dodatkowej autoryzacji
+        from ..auth import create_access_token
+        from starlette.config import Config
+        
+        # Utwórz token dla obrazka
+        token_data = {"sub": current_user.username}
+        access_token = create_access_token(token_data)
+        
+        # Stwórz pełny URL
+        host_url = "http://127.0.0.1:8000"  # Można pobrać z konfiguracji lub zmiennych środowiskowych
+        stimulus_url = f"{host_url}/api/images/{stimulus_id}?token={access_token}" if stimulus else None
+        
         return {
             "round_id": round_obj.id,
             "session_id": session.id,
@@ -336,7 +351,8 @@ def submit_round_choice(
             "stimulus_id": stimulus_id,
             "session_status": session.status,
             "remaining_pairs": session.remaining_pairs,
-            "session_profit_factor": session.session_profit_factor
+            "session_profit_factor": session.session_profit_factor,
+            "stimulus_url": stimulus_url
         }
         
     except HTTPException:
