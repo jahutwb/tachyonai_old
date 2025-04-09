@@ -171,16 +171,25 @@ def submit_round_choice(
     db: Session = Depends(get_db),
 ):
     """Przetwarza wybór użytkownika w rundzie i zwraca wynik."""
+    import time
+    start_time = time.time()
+    
     try:
-        logger.info(f"Przetwarzanie wyboru dla rundy {choice.round_id}, sesji {choice.session_id}")
+        logger.info(f"[TIMING] Rozpoczęcie przetwarzania wyboru dla rundy {choice.round_id}, sesji {choice.session_id}")
         
         # Sprawdź, czy runda istnieje
+        query_start = time.time()
         round_obj = db.query(Round).filter(Round.id == choice.round_id).first()
+        logger.info(f"[TIMING] Pobranie rundy: {time.time() - query_start:.3f}s")
+        
         if not round_obj:
             raise HTTPException(status_code=404, detail="Runda nie znaleziona")
         
         # Sprawdź, czy sesja należy do bieżącego użytkownika
+        query_start = time.time()
         session = db.query(SessionModel).filter(SessionModel.id == round_obj.session_id).first()
+        logger.info(f"[TIMING] Pobranie sesji: {time.time() - query_start:.3f}s")
+        
         if not session or session.user_id != current_user.id:
             raise HTTPException(status_code=403, detail="Brak dostępu do tej rundy")
         
@@ -192,6 +201,7 @@ def submit_round_choice(
         end_price = round_obj.start_price * (1 + price_change)
         
         # Przygotuj kopie JSON-ów z puli
+        json_start = time.time()
         try:
             pos_pool = json.loads(session.pos_pool_json) if isinstance(session.pos_pool_json, str) else session.pos_pool_json
             neg_pool = json.loads(session.neg_pool_json) if isinstance(session.neg_pool_json, str) else session.neg_pool_json
@@ -202,15 +212,15 @@ def submit_round_choice(
             if neg_pool is None:
                 neg_pool = []
                 
-            logger.info("Stan pul przed aktualizacją:")
-            logger.info(f"Pozytywna: {[(i['id'], i.get('failures', 0), i.get('successes', 0)) for i in pos_pool]}")
-            logger.info(f"Negatywna: {[(i['id'], i.get('failures', 0), i.get('successes', 0)) for i in neg_pool]}")
+            logger.info(f"[TIMING] Przetwarzanie JSON: {time.time() - json_start:.3f}s")
+            
         except Exception as e:
             logger.error(f"Błąd przy odczycie JSON pool: {str(e)}")
             pos_pool = []
             neg_pool = []
         
         # Oblicz wynik i zaktualizuj pule
+        update_start = time.time()
         if (user_action == "BUY" and price_change > 0) or (user_action == "SELL" and price_change < 0):
             result = "SUCCESS"
             profit_fraction = abs(price_change)
@@ -241,12 +251,8 @@ def submit_round_choice(
                 if item["id"] == round_obj.neg_image_id:
                     item["failures"] = item.get("failures", 0) + 1
                     logger.info(f"FAILURE: Zwiększam failures dla neg_image {item['id']}: {item['failures']}")
-            
-            # Nie zmniejszamy już ręcznie remaining_pairs, będzie to obliczone później dynamicznie
         
-        logger.info("Stan pul po aktualizacji:")
-        logger.info(f"Pozytywna: {[(i['id'], i.get('failures', 0), i.get('successes', 0)) for i in pos_pool]}")
-        logger.info(f"Negatywna: {[(i['id'], i.get('failures', 0), i.get('successes', 0)) for i in neg_pool]}")
+        logger.info(f"[TIMING] Aktualizacja pul: {time.time() - update_start:.3f}s")
         
         # Aktualizuj sesję - wymuszamy wykrycie zmian w polach JSON
         session.session_profit_factor *= (1 + profit_fraction)
@@ -261,10 +267,12 @@ def submit_round_choice(
         attributes.flag_modified(session, "neg_pool_json")
         
         # Sprawdź liczbę dostępnych par (liczba obrazów z failures=0)
+        pairs_start = time.time()
         valid_pos_pool = [item for item in pos_pool if item.get("failures", 0) == 0]
         valid_neg_pool = [item for item in neg_pool if item.get("failures", 0) == 0]
         
         available_pairs = min(len(valid_pos_pool), len(valid_neg_pool))
+        logger.info(f"[TIMING] Obliczenie dostępnych par: {time.time() - pairs_start:.3f}s")
         logger.info(f"Dostępne pary po aktualizacji: {available_pairs} (valid_pos: {len(valid_pos_pool)}, valid_neg: {len(valid_neg_pool)})")
         
         # Aktualizuj remaining_pairs na podstawie rzeczywistej liczby dostępnych par
@@ -276,66 +284,20 @@ def submit_round_choice(
             session.ended_at = func.now()
             logger.info(f"Kończę sesję {session.id} - brak dostępnych par")
             
-            # Automatycznie rozpocznij generowanie nowej puli w tle
-            try:
-                logger.info(f"Rozpoczynam automatyczne generowanie nowej puli dla użytkownika {current_user.id}")
-                print(f"[DEBUG] Rozpoczynam automatyczne generowanie nowej puli dla użytkownika {current_user.id}")
-                
-                # Dodaj więcej szczegółowych logów dla debugowania
-                try:
-                    valid_pos = [(item["id"], item.get("successes", 0), item.get("failures", 0)) for item in pos_pool if item.get("failures", 0) == 0]
-                    valid_neg = [(item["id"], item.get("successes", 0), item.get("failures", 0)) for item in neg_pool if item.get("failures", 0) == 0]
-                    print(f"[DEBUG] Bodźce w poprzedniej sesji dla generowania genetycznego:")
-                    print(f"[DEBUG] Pozytywne ({len(valid_pos)}): {valid_pos}")
-                    print(f"[DEBUG] Negatywne ({len(valid_neg)}): {valid_neg}")
-                except Exception as e:
-                    print(f"[DEBUG] Błąd podczas logowania stanu bodźców: {str(e)}")
-                
-                pos_pool_json, neg_pool_json = generate_pool_with_genetic_algorithm(session, db)
-                
-                # Sprawdź stats wygenerowanej puli
-                try:
-                    pos_stats = {
-                        "total": len(pos_pool_json),
-                        "bought": sum(1 for item in pos_pool_json if item.get("origin") == "bought"),
-                        "children": sum(1 for item in pos_pool_json if item.get("origin") == "child"),
-                        "random": sum(1 for item in pos_pool_json if item.get("origin") == "random")
-                    }
-                    neg_stats = {
-                        "total": len(neg_pool_json),
-                        "bought": sum(1 for item in neg_pool_json if item.get("origin") == "bought"),
-                        "children": sum(1 for item in neg_pool_json if item.get("origin") == "child"),
-                        "random": sum(1 for item in neg_pool_json if item.get("origin") == "random")
-                    }
-                    print(f"[DEBUG] Stats wygenerowanej puli - POS: {pos_stats}, NEG: {neg_stats}")
-                except Exception as e:
-                    print(f"[DEBUG] Błąd podczas logowania statystyk puli: {str(e)}")
-                
-                # Tworzę nową sesję PENDING z wygenerowaną pulą
-                new_session = SessionModel(
-                    user_id=current_user.id,
-                    status="PENDING",
-                    pos_pool_json=pos_pool_json,
-                    neg_pool_json=neg_pool_json,
-                    session_profit_factor=1.0,
-                    remaining_pairs=6,
-                    started_at=None  # Zostanie ustawione przy aktywacji
-                )
-                
-                db.add(new_session)
-                logger.info(f"Utworzono nową sesję PENDING (id={new_session.id}) dla użytkownika {current_user.id}")
-            except Exception as e:
-                logger.error(f"Błąd podczas automatycznego generowania nowej puli: {str(e)}")
-                logger.error(traceback.format_exc())
+            # Nowa pula będzie generowana dopiero po kliknięciu przycisku "Podsumowanie sesji"
+            # zgodnie ze specyfikacją, a nie automatycznie po zakończeniu sesji
         
         # Zapisz wszystkie zmiany w jednej transakcji
+        commit_start = time.time()
         db.commit()
+        logger.info(f"[TIMING] Zapis zmian do bazy: {time.time() - commit_start:.3f}s")
         
         # Odśwież wszystkie obiekty
         db.refresh(session)
         db.refresh(round_obj)
         
         # Aktualizuj statystyki obrazów w bazie
+        images_start = time.time()
         pos_image = db.query(Image).filter(Image.id == round_obj.pos_image_id).first()
         neg_image = db.query(Image).filter(Image.id == round_obj.neg_image_id).first()
         
@@ -349,35 +311,32 @@ def submit_round_choice(
         pos_image.total_profit_factor *= (1 + profit_fraction)
         neg_image.total_profit_factor *= (1 + profit_fraction)
         
-        # Aktualizuj rundę
-        round_obj.user_choice_side = choice.side
+        # Zapisz zmiany w obrazach
+        db.commit()
+        logger.info(f"[TIMING] Aktualizacja obrazów: {time.time() - images_start:.3f}s")
+        
+        # Zaktualizuj obiekt rundy
         round_obj.user_action = user_action
         round_obj.end_price = end_price
         round_obj.profit_fraction = profit_fraction
         round_obj.result = result
-        round_obj.completed_at = func.now()
+        round_obj.stimulus_id = stimulus_id
+        round_obj.processed_at = func.now()
         
-        # Zapisz zmiany w rundzie
         db.commit()
-        db.refresh(round_obj)
-        
-        # Pobierz URL obrazka bodźca
-        stimulus = db.query(Image).filter(Image.id == stimulus_id).first()
-        stimulus_url = f"/api/images/{stimulus_id}/thumbnail" if stimulus else None
+        logger.info(f"[TIMING] Całkowity czas przetwarzania wyboru: {time.time() - start_time:.3f}s")
         
         return {
             "round_id": round_obj.id,
-            "session_id": round_obj.session_id,
+            "session_id": session.id,
             "start_price": round_obj.start_price,
-            "end_price": round_obj.end_price,
-            "profit_fraction": round_obj.profit_fraction,
-            "result": round_obj.result,
+            "end_price": end_price,
+            "profit_fraction": profit_fraction,
+            "result": result,
+            "stimulus_id": stimulus_id,
+            "session_status": session.status,
             "remaining_pairs": session.remaining_pairs,
-            "session_profit_factor": session.session_profit_factor,
-            "stimulus_url": stimulus_url,
-            "left_action": round_obj.left_action,
-            "right_action": round_obj.right_action,
-            "session_status": session.status
+            "session_profit_factor": session.session_profit_factor
         }
         
     except HTTPException:
@@ -386,4 +345,4 @@ def submit_round_choice(
         logger.error(f"Błąd w submit_round_choice: {str(e)}")
         logger.error(traceback.format_exc())
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Błąd przetwarzania wyboru: {str(e)}") 
+        raise HTTPException(status_code=500, detail=f"Błąd przetwarzania wyboru: {str(e)}")
