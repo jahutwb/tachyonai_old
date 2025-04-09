@@ -279,7 +279,37 @@ def submit_round_choice(
             # Automatycznie rozpocznij generowanie nowej puli w tle
             try:
                 logger.info(f"Rozpoczynam automatyczne generowanie nowej puli dla użytkownika {current_user.id}")
+                print(f"[DEBUG] Rozpoczynam automatyczne generowanie nowej puli dla użytkownika {current_user.id}")
+                
+                # Dodaj więcej szczegółowych logów dla debugowania
+                try:
+                    valid_pos = [(item["id"], item.get("successes", 0), item.get("failures", 0)) for item in pos_pool if item.get("failures", 0) == 0]
+                    valid_neg = [(item["id"], item.get("successes", 0), item.get("failures", 0)) for item in neg_pool if item.get("failures", 0) == 0]
+                    print(f"[DEBUG] Bodźce w poprzedniej sesji dla generowania genetycznego:")
+                    print(f"[DEBUG] Pozytywne ({len(valid_pos)}): {valid_pos}")
+                    print(f"[DEBUG] Negatywne ({len(valid_neg)}): {valid_neg}")
+                except Exception as e:
+                    print(f"[DEBUG] Błąd podczas logowania stanu bodźców: {str(e)}")
+                
                 pos_pool_json, neg_pool_json = generate_pool_with_genetic_algorithm(session, db)
+                
+                # Sprawdź stats wygenerowanej puli
+                try:
+                    pos_stats = {
+                        "total": len(pos_pool_json),
+                        "bought": sum(1 for item in pos_pool_json if item.get("origin") == "bought"),
+                        "children": sum(1 for item in pos_pool_json if item.get("origin") == "child"),
+                        "random": sum(1 for item in pos_pool_json if item.get("origin") == "random")
+                    }
+                    neg_stats = {
+                        "total": len(neg_pool_json),
+                        "bought": sum(1 for item in neg_pool_json if item.get("origin") == "bought"),
+                        "children": sum(1 for item in neg_pool_json if item.get("origin") == "child"),
+                        "random": sum(1 for item in neg_pool_json if item.get("origin") == "random")
+                    }
+                    print(f"[DEBUG] Stats wygenerowanej puli - POS: {pos_stats}, NEG: {neg_stats}")
+                except Exception as e:
+                    print(f"[DEBUG] Błąd podczas logowania statystyk puli: {str(e)}")
                 
                 # Tworzę nową sesję PENDING z wygenerowaną pulą
                 new_session = SessionModel(
@@ -346,7 +376,8 @@ def submit_round_choice(
             "session_profit_factor": session.session_profit_factor,
             "stimulus_url": stimulus_url,
             "left_action": round_obj.left_action,
-            "right_action": round_obj.right_action
+            "right_action": round_obj.right_action,
+            "session_status": session.status
         }
         
     except HTTPException:

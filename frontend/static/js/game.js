@@ -95,134 +95,84 @@ async function showResultPhase(result, stimulusUrl) {
     console.log(`Wyświetlam fazę wynikową: ${result}, URL bodźca: ${stimulusUrl}`);
     
     try {
-        // Ukryj fazę wyboru - poprawiony selektor z .game-phase-select na #game-phase-select
-        const selectPhaseElement = document.getElementById('game-phase-select');
-        if (!selectPhaseElement) {
-            console.error('Element #game-phase-select nie został znaleziony');
-            // Próba alternatywnego selektora jako ostateczna próba
-            const altSelectPhase = document.querySelector('.game-container');
-            if (altSelectPhase) {
-                console.log('Znaleziono alternatywny element .game-container');
-                altSelectPhase.style.display = 'none';
-            } else {
-                console.error('Alternatywny element .game-container również nie został znaleziony');
-            }
-        } else {
-            selectPhaseElement.style.display = 'none';
-        }
+        // Ukryj fazę wyboru i pokaż fazę wyniku
+        document.getElementById('game-phase-select').style.display = 'none';
+        document.getElementById('game-phase-result').style.display = 'block';
         
-        // Pokaż fazę wyniku
-        const resultPhase = document.getElementById('game-phase-result');
-        if (!resultPhase) {
-            console.error('Element #game-phase-result nie został znaleziony');
-            return;  // Przerwij wykonanie jeśli nie znaleziono elementu
-        }
-        resultPhase.style.display = 'block';
-        
-        // Ustaw tekst wyniku - element w HTML to result-status, nie result-text
-        const resultText = document.getElementById('result-status');
-        if (!resultText) {
-            console.error('Element #result-status nie został znaleziony');
-        } else {
-            resultText.textContent = result === 'SUCCESS' ? 'SUKCES!' : 'PORAŻKA!';
-            resultText.className = result === 'SUCCESS' ? 'success' : 'failure';
-        }
-        
-        // Wyświetl informacje o zmianie zysku
-        const profitChangeElement = document.getElementById('profit-change');
-        if (profitChangeElement) {
-            // Użyj wartości z odpowiedzi serwera zamiast GameState.profit_fraction
-            const profitFraction = GameState.endPrice ? 
-                (GameState.endPrice - GameState.startPrice) / GameState.startPrice : 0;
-            
-            const profitValue = profitFraction != 0 ? 
-                (profitFraction > 0 ? `+${(profitFraction * 100).toFixed(2)}%` : `${(profitFraction * 100).toFixed(2)}%`) :
-                '0.00%';
-            
-            profitChangeElement.textContent = profitValue;
-            profitChangeElement.className = profitFraction > 0 ? 'positive' : 'negative';
-        } else {
-            console.error('Element #profit-change nie został znaleziony');
-        }
-        
-        // Zarządzanie przyciskami w zależności od pozostałych par
-        const nextRoundButton = document.getElementById('next-round-button');
-        const summaryButton = document.getElementById('summary-button');
-        
-        if (GameState.remainingPairs <= 0) {
-            // Ostatnia runda - pokaż tylko przycisk podsumowania
-            if (nextRoundButton) nextRoundButton.style.display = 'none';
-            if (summaryButton) summaryButton.style.display = 'inline-block';
-            console.log('Ostatnia runda - wyświetlam tylko przycisk podsumowania');
-        } else {
-            // Normalna runda - pokaż przycisk następnej rundy, ukryj podsumowanie
-            if (nextRoundButton) nextRoundButton.style.display = 'inline-block';
-            if (summaryButton) summaryButton.style.display = 'none';
-            console.log(`Pozostało par: ${GameState.remainingPairs} - wyświetlam przycisk następnej rundy`);
-        }
-        
-        // Załaduj obraz bodźca
+        // Pobierz elementy DOM
+        let resultMessage = document.getElementById('result-status');
+        let changePercentage = document.getElementById('profit-change');
         const stimulusImage = document.getElementById('stimulus-image');
-        if (!stimulusImage) {
-            console.error('Element #stimulus-image nie został znaleziony');
-            return;
+        
+        // Sprawdź, czy elementy istnieją
+        if (!resultMessage) {
+            console.error('Element #result-status nie istnieje w DOM');
+            // Tworzymy element, jeśli nie istnieje
+            const newResultMessage = document.createElement('div');
+            newResultMessage.id = 'result-status';
+            newResultMessage.className = 'result-status';
+            document.querySelector('.result-info').appendChild(newResultMessage);
+            // Przypisujemy do zmiennej lokalnej
+            resultMessage = newResultMessage;
         }
         
-        if (stimulusUrl) {
-            console.log(`Ładowanie obrazu z URL: ${stimulusUrl}`);
-            
-            try {
-                // Pobierz token z localStorage
-                const token = localStorage.getItem('token');
-                
-                if (!token) {
-                    console.error('Brak tokenu autoryzacyjnego w localStorage');
-                    return;
-                }
-                
-                // Ustaw na początku placeholder lub ukryj obraz
-                stimulusImage.src = '';
+        if (!changePercentage) {
+            console.error('Element #profit-change nie istnieje w DOM');
+            // Tworzymy element, jeśli nie istnieje
+            const newChangePercentage = document.createElement('div');
+            newChangePercentage.id = 'profit-change';
+            newChangePercentage.className = 'profit-change';
+            document.querySelector('.result-info').appendChild(newChangePercentage);
+            // Przypisujemy do zmiennej lokalnej
+            changePercentage = newChangePercentage;
+        }
+        
+        // Ustawienie komunikatu i klasy dla wyniku
+        if (result === 'SUCCESS') {
+            resultMessage.textContent = 'SUKCES!';
+            resultMessage.className = 'result-status success-result';
+        } else {
+            resultMessage.textContent = 'PORAŻKA!';
+            resultMessage.className = 'result-status failure-result';
+        }
+        
+        // Obliczenie i wyświetlenie procentowej zmiany ceny
+        const startPrice = GameState.startPrice;
+        const endPrice = GameState.endPrice;
+        const percentChange = ((endPrice - startPrice) / startPrice) * 100;
+        changePercentage.textContent = `Zmiana ceny: ${percentChange.toFixed(2)}%`;
+        
+        // Wyświetlenie bodźca, jeśli URL jest dostępny
+        if (stimulusUrl && stimulusImage) {
+            stimulusImage.style.display = 'block';
+            stimulusImage.src = stimulusUrl;
+            stimulusImage.onerror = function() {
+                console.error('Błąd ładowania obrazu bodźca');
+                stimulusImage.alt = 'Błąd ładowania obrazu';
                 stimulusImage.style.display = 'none';
-                
-                // Pobierz obraz z uwzględnieniem autoryzacji
-                const response = await fetch(stimulusUrl, {
-                    method: 'GET',
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`Błąd pobierania obrazu: ${response.status} ${response.statusText}`);
-                }
-                
-                // Konwertuj odpowiedź na blob i utwórz URL
-                const blob = await response.blob();
-                const imageUrl = URL.createObjectURL(blob);
-                
-                // Ustaw obraz
-                stimulusImage.onload = function() {
-                    stimulusImage.style.display = 'block';
-                    console.log('Obraz bodźca załadowany pomyślnie');
-                };
-                
-                stimulusImage.onerror = function() {
-                    console.error('Błąd ładowania obrazu bodźca');
-                    stimulusImage.style.display = 'none';
-                };
-                
-                stimulusImage.src = imageUrl;
-            } catch (error) {
-                console.error('Błąd podczas ładowania obrazu bodźca:', error);
+            };
+            stimulusImage.onload = function() {
+                console.log('Obraz bodźca załadowany pomyślnie');
+            };
+        } else {
+            console.log('Brak URL bodźca lub elementu obrazu');
+            if (stimulusImage) {
                 stimulusImage.style.display = 'none';
             }
+        }
+        
+        // Aktualizacja przycisków na podstawie pozostałych par
+        if (GameState.remainingPairs <= 0) {
+            console.log('Brak pozostałych par - pokazuję przycisk podsumowania');
+            document.getElementById('next-round-button').style.display = 'none';
+            document.getElementById('summary-button').style.display = 'inline-block';
         } else {
-            console.warn('Brak URL obrazu bodźca');
-            stimulusImage.style.display = 'none';
+            console.log(`Pozostało par: ${GameState.remainingPairs} - wyświetlam przycisk następnej rundy`);
+            document.getElementById('next-round-button').style.display = 'inline-block';
+            document.getElementById('summary-button').style.display = 'none';
         }
     } catch (error) {
         console.error('Błąd wyświetlania fazy wynikowej:', error);
-        hideLoadingOverlay();
     }
 }
 
@@ -353,14 +303,19 @@ async function loadNextRound() {
 
 // Funkcja do obsługi wyboru kurtyny
 async function selectCurtain(side) {
+    console.log('====== START selectCurtain ======');
+    console.log(`Wybrano kurtynę: ${side}, isWaitingForPriceChange: ${GameState.isWaitingForPriceChange}`);
+    
     if (GameState.isWaitingForPriceChange) {
         console.warn('Już oczekujemy na zmianę ceny, ignoruję kliknięcie');
         return;
     }
 
+    // Natychmiastowe ustawienie flagi na początku funkcji - blokuje wielokrotne kliknięcia
+    GameState.isWaitingForPriceChange = true;
+    console.log(`Flaga isWaitingForPriceChange ustawiona na: ${GameState.isWaitingForPriceChange}`);
+    
     try {
-        console.log(`Wybrano kurtynę: ${side}`);
-        
         // Rozszerz wybraną kurtynę i ukryj drugą
         const leftCurtain = document.getElementById('left-curtain');
         const rightCurtain = document.getElementById('right-curtain');
@@ -373,73 +328,129 @@ async function selectCurtain(side) {
             leftCurtain.classList.add('curtain-hidden');
         }
         
-        // Pobierz cenę początkową
-        const startPrice = await getCurrentPrice();
-        console.log(`Cena początkowa: ${startPrice}`);
+        console.log('KROK 1: Pobieranie aktualnej ceny');
+        // Pobierz aktualną cenę i wyślij wybór
+        const currentPrice = await getCurrentPrice();
+        console.log(`KROK 1 zakończony: Cena początkowa: ${currentPrice}`);
         
-        // Aktualizuj stan gry
-        GameState.startPrice = startPrice;
-        GameState.isWaitingForPriceChange = true;  // Ustawiamy flagę czekania na true
+        // Zapisz cenę początkową
+        GameState.startPrice = currentPrice;
         
-        // Ustawienie timeout na 15 sekund aby zapobiec zawieszeniu w razie problemów z API
-        const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Przekroczono czas oczekiwania na odpowiedź serwera')), 15000)
-        );
+        // Przygotuj dane do wysłania
+        const data = {
+            session_id: GameState.sessionId,
+            round_id: GameState.currentRound.id,
+            side: side
+        };
         
-        // Próba wysłania wyboru z timeout
-        const fetchPromise = fetchWithAuth('/api/rounds/choice', {
-            method: 'POST',
-            body: JSON.stringify({
-                round_id: GameState.currentRound.id,
-                session_id: GameState.sessionId,
-                side: side
-            })
-        });
-        
-        // Wyścig między normalnym fetch a timeout
-        const response = await Promise.race([fetchPromise, timeoutPromise]);
-        
-        if (!response.ok) {
-            throw new Error(`Błąd wysyłania wyboru: ${response.status} ${response.statusText}`);
+        console.log('KROK 2: Wysyłanie wyboru do backendu', data);
+        try {
+            // Wyślij wybór do backendu
+            const response = await fetchWithAuth('/api/rounds/choice', {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
+            
+            console.log(`KROK 2 zakończony: Status odpowiedzi: ${response.status}`);
+            
+            if (!response.ok) {
+                throw new Error(`Błąd odpowiedzi serwera: ${response.status} ${response.statusText}`);
+            }
+            
+            console.log('KROK 3: Parsowanie JSON z odpowiedzi');
+            const result = await response.json();
+            console.log('KROK 3 zakończony: Odpowiedź z backendu:', result);
+            
+            // Logowanie pełnej odpowiedzi dla zrozumienia jej struktury
+            console.log('Pełna odpowiedź serwera (stringify):', JSON.stringify(result, null, 2));
+            
+            // Sprawdzenie czy odpowiedź zawiera oczekiwane pola
+            console.log('Odpowiedź zawiera pole result:', result.hasOwnProperty('result'));
+            console.log('Odpowiedź zawiera pole remaining_pairs:', result.hasOwnProperty('remaining_pairs'));
+            console.log('Odpowiedź zawiera pole session_status:', result.hasOwnProperty('session_status'));
+            
+            console.log('KROK 4: Aktualizacja stanu gry');
+            // Aktualizacja stanu gry o wynik
+            GameState.endPrice = result.end_price || GameState.startPrice;
+            GameState.remainingPairs = result.remaining_pairs !== undefined ? result.remaining_pairs : GameState.remainingPairs;
+            GameState.sessionProfitFactor = result.session_profit_factor || GameState.sessionProfitFactor;
+            
+            if (result.result === 'SUCCESS') {
+                GameState.successes++;
+                console.log(`Sukces! Liczba sukcesów: ${GameState.successes}`);
+            } else {
+                GameState.failures++;
+                console.log(`Porażka! Liczba porażek: ${GameState.failures}`);
+            }
+            
+            // WAŻNE: Zawsze resetujemy flagę czekania przed pokazaniem wyniku
+            console.log('KROK 5: Resetowanie flagi isWaitingForPriceChange');
+            GameState.isWaitingForPriceChange = false;
+            console.log(`Flaga isWaitingForPriceChange zresetowana na: ${GameState.isWaitingForPriceChange}`);
+            
+            console.log('KROK 6: Pokazywanie fazy wyniku');
+            // Pokaż fazę wyniku
+            await showResultPhase(result.result, result.stimulus_url);
+            console.log('KROK 6 zakończony: Faza wyniku pokazana');
+            
+            console.log('KROK 7: Aktualizacja widoku statystyk');
+            // Aktualizuj widok statystyk
+            updateStatsView();
+            
+            // Logowanie stanu aplikacji po rundzie
+            logAppState(`Po rundzie - wynik: ${result.result}`);
+            
+            console.log('KROK 8: Sprawdzanie statusu sesji');
+            // Sprawdź status sesji i pozostałe pary
+            console.log(`Status sesji: ${result.session_status}, Pozostałe pary: ${GameState.remainingPairs}`);
+            
+            // Dodatkowa weryfikacja dla zakończenia sesji
+            const isSessionCompleted = (
+                result.session_status === 'COMPLETED' || 
+                result.remaining_pairs === 0 || 
+                GameState.remainingPairs <= 0
+            );
+            
+            console.log(`Czy sesja zakończona: ${isSessionCompleted}`);
+            
+            if (isSessionCompleted) {
+                console.log('Sesja zakończona - pokazuję przycisk podsumowania');
+                document.getElementById('next-round-button').style.display = 'none';
+                document.getElementById('summary-button').style.display = 'inline-block';
+            } else {
+                console.log(`Pozostało par: ${GameState.remainingPairs} - pokazuję przycisk następnej rundy`);
+                document.getElementById('next-round-button').style.display = 'inline-block';
+                document.getElementById('summary-button').style.display = 'none';
+            }
+            
+            console.log('KROK 8 zakończony: Przyciski zaktualizowane');
+            
+        } catch (apiError) {
+            console.error('BŁĄD w komunikacji z API:', apiError);
+            // BARDZO WAŻNE: Resetujemy flagę czekania w przypadku błędu API
+            GameState.isWaitingForPriceChange = false;
+            console.log(`Flaga isWaitingForPriceChange zresetowana po błędzie API: ${GameState.isWaitingForPriceChange}`);
+            throw apiError;
         }
-        
-        const result = await response.json();
-        console.log('Odpowiedź z serwera po wyborze:', result);
-        
-        // Aktualizuj stan gry
-        GameState.endPrice = result.end_price;
-        GameState.isWaitingForPriceChange = false;  // Ustawiamy flagę czekania na false po otrzymaniu wyniku
-        GameState.sessionProfitFactor = result.session_profit_factor;
-        GameState.remainingPairs = result.remaining_pairs;
-        
-        if (result.result === 'SUCCESS') {
-            GameState.successes++;
-        } else {
-            GameState.failures++;
-        }
-        
-        // Zaloguj stan aplikacji
-        logAppState(`Po rundzie - wynik: ${result.result}`);
-        
-        // Pokaż fazę wyniku bez opóźnienia
-        await showResultPhase(result.result, result.stimulus_url);
-        
-        // Aktualizuj widok statystyk
-        updateStatsView();
         
     } catch (error) {
-        console.error('Błąd podczas przetwarzania wyboru:', error);
-        GameState.isWaitingForPriceChange = false;  // Reset flagi czekania w przypadku błędu
+        console.error('Nieobsłużony błąd podczas przetwarzania wyboru:', error);
+        console.error('Pełny stack trace błędu:', error.stack);
         
-        // Przywróć UI do stanu początkowego
-        const leftCurtain = document.getElementById('left-curtain');
-        const rightCurtain = document.getElementById('right-curtain');
-        if (leftCurtain) leftCurtain.classList.remove('curtain-expanded', 'curtain-hidden');
-        if (rightCurtain) rightCurtain.classList.remove('curtain-expanded', 'curtain-hidden');
+        // BARDZO WAŻNE: Zawsze resetujemy flagę czekania w przypadku błędu
+        GameState.isWaitingForPriceChange = false;
+        console.log(`Flaga isWaitingForPriceChange zresetowana po błędzie: ${GameState.isWaitingForPriceChange}`);
         
-        // Pokaż komunikat o błędzie
-        alert('Wystąpił błąd podczas przetwarzania wyboru. Spróbuj ponownie.');
+    } finally {
+        // EKSTRA ZABEZPIECZENIE: Ostateczne sprawdzenie i reset flagi
+        if (GameState.isWaitingForPriceChange) {
+            console.log('UWAGA: Flaga isWaitingForPriceChange nadal ustawiona w bloku finally - resetuję');
+            GameState.isWaitingForPriceChange = false;
+        }
+        
+        // Zawsze ukrywamy overlay ładowania
         hideLoadingOverlay();
+        console.log('====== KONIEC selectCurtain ======');
     }
 }
 

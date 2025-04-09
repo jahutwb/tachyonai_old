@@ -655,7 +655,7 @@ def generate_pool_with_genetic_algorithm(previous_session: SessionModel, db: Ses
         # 5.1 Dla pozytywnych - sortuj wg liczby sukcesów (malejąco)
         pos_ranking = sorted(
             [(img_id, pos_pool_dict.get(img_id, {}).get("successes", 0)) 
-             for img_id, _ in pos_embeddings if pos_pool_dict.get(img_id, {}).get("successes", 0) > 0],
+             for img_id, _ in pos_embeddings],  
             key=lambda x: x[1],
             reverse=True
         )
@@ -663,7 +663,7 @@ def generate_pool_with_genetic_algorithm(previous_session: SessionModel, db: Ses
         # 5.2 Dla negatywnych - sortuj wg liczby przetrwań (malejąco)
         neg_ranking = sorted(
             [(img_id, neg_pool_dict.get(img_id, {}).get("successes", 0)) 
-             for img_id, _ in neg_embeddings if neg_pool_dict.get(img_id, {}).get("successes", 0) > 0],
+             for img_id, _ in neg_embeddings],  
             key=lambda x: x[1],
             reverse=True
         )
@@ -774,7 +774,7 @@ def generate_pool_with_genetic_algorithm(previous_session: SessionModel, db: Ses
             if len(new_pos_pool) < num_pairs:
                 random_count = num_pairs - len(new_pos_pool)
                 logger.info(f"Uzupełniam {random_count} losowymi pozytywnymi bodźcami")
-                random_pos = get_random_images(db, "POSITIVE", random_count, exclude_ids=pos_ids + [item["id"] for item in new_pos_pool])
+                random_pos = get_random_images(db, "POSITIVE", random_count, exclude_ids=[item["id"] for item in new_pos_pool])
                 
                 for img_id in random_pos:
                     new_pos_pool.append({
@@ -880,7 +880,7 @@ def generate_pool_with_genetic_algorithm(previous_session: SessionModel, db: Ses
             if len(new_neg_pool) < num_pairs:
                 random_count = num_pairs - len(new_neg_pool)
                 logger.info(f"Uzupełniam {random_count} losowymi negatywnymi bodźcami")
-                random_neg = get_random_images(db, "NEGATIVE", random_count, exclude_ids=neg_ids + [item["id"] for item in new_neg_pool])
+                random_neg = get_random_images(db, "NEGATIVE", random_count, exclude_ids=[item["id"] for item in new_neg_pool])
                 
                 for img_id in random_neg:
                     new_neg_pool.append({
@@ -975,10 +975,15 @@ def generate_children(
         exclude_ids = []
         
     logger.info(f"Generowanie {num_children} dzieci typu {image_type} z {len(parent_ids)} rodziców")
+    print(f"[DEBUG CHILDREN] Generowanie {num_children} dzieci typu {image_type} z {len(parent_ids)} rodziców")
+    print(f"[DEBUG CHILDREN] Rodzice: {parent_ids}")
+    print(f"[DEBUG CHILDREN] Długość wektora różnicy: {len(difference_vector) if difference_vector is not None else 'None'}")
+    print(f"[DEBUG CHILDREN] Norma wektora różnicy: {np.linalg.norm(difference_vector) if difference_vector is not None else 'None'}")
     
     # Jeśli brak rodziców lub dzieci do wygenerowania, zwróć pustą listę
     if not parent_ids or num_children <= 0:
         logger.warning(f"[BŁĄD DZIECI] Brak rodziców ({len(parent_ids)}) lub liczba dzieci <= 0 ({num_children})")
+        print(f"[DEBUG CHILDREN] Brak rodziców ({len(parent_ids)}) lub liczba dzieci <= 0 ({num_children})")
         return []
     
     # Pobierz wszystkie obrazy danego typu z bazy danych
@@ -989,6 +994,8 @@ def generate_children(
             all_embeddings.append((img.id, img.embedding))
         else:
             logger.warning(f"[BŁĄD DZIECI] Obraz {img.id} nie ma embeddingu, pomijam")
+    
+    print(f"[DEBUG CHILDREN] Znaleziono {len(all_embeddings)} potencjalnych kandydatów na dzieci typu {image_type}")
             
     if not all_embeddings:
         logger.warning(f"[BŁĄD DZIECI] Brak obrazów z embeddingami typu {image_type}")
@@ -997,10 +1004,11 @@ def generate_children(
     logger.info(f"Znaleziono {len(all_embeddings)} potencjalnych kandydatów na dzieci typu {image_type}")
     
     # Rozdziel dzieci pomiędzy rodziców
-    children_per_parent = num_children // len(parent_ids)
+    children_per_parent = max(1, num_children // len(parent_ids))  # Co najmniej 1 dziecko na rodzica
     extra_children = num_children % len(parent_ids)
     
     logger.info(f"Rozdzielam dzieci: {children_per_parent} na rodzica + {extra_children} extra dla najlepszych")
+    print(f"[DEBUG CHILDREN] Rozdzielam dzieci: {children_per_parent} na rodzica + {extra_children} extra dla najlepszych")
     
     children = []
     
@@ -1012,14 +1020,22 @@ def generate_children(
             num_parent_children += 1
             
         logger.info(f"Generuję {num_parent_children} dzieci dla rodzica {parent_id}")
+        print(f"[DEBUG CHILDREN] Generuję {num_parent_children} dzieci dla rodzica {parent_id}")
         
+        # Sprawdź czy rodzic ma embedding
+        if parent_id not in embeddings_dict:
+            logger.warning(f"[BŁĄD DZIECI] Rodzic {parent_id} nie ma embeddingu, pomijam")
+            print(f"[DEBUG CHILDREN] Rodzic {parent_id} nie ma embeddingu, pomijam")
+            continue
+            
         # Embedding rodzica
         parent_vec = np.array(embeddings_dict[parent_id])
         
         # Wygeneruj dzieci
         for _ in range(num_parent_children):
-            # Oblicz embedding dziecka
-            child_vec = parent_vec + difference_vector
+            # Oblicz embedding dziecka, dodając losowy szum dla większej różnorodności
+            noise = np.random.normal(0, 0.05, size=parent_vec.shape)  # Dodajemy mały szum
+            child_vec = parent_vec + difference_vector + noise
             
             # Znajdź najbliższy obraz
             child_id, distance = find_nearest_embedding(
@@ -1030,6 +1046,7 @@ def generate_children(
             
             if child_id is None:
                 logger.warning(f"[BŁĄD DZIECI] Nie znaleziono odpowiedniego dziecka dla rodzica {parent_id}")
+                print(f"[DEBUG CHILDREN] Nie znaleziono odpowiedniego dziecka dla rodzica {parent_id}, próbuję z modyfikacją")
                 # Jeśli nie znaleziono odpowiedniego dziecka, spróbuj z modyfikacją wektora
                 for alpha in [1.5, 2.0, 3.0]:
                     logger.info(f"Próba z modyfikacją alpha={alpha}")
@@ -1047,17 +1064,21 @@ def generate_children(
                     
                     if child_id is not None:
                         logger.info(f"Znaleziono dziecko {child_id} dla rodzica {parent_id} z alpha={alpha}, odległość={distance:.6f}")
+                        print(f"[DEBUG CHILDREN] Znaleziono dziecko {child_id} dla rodzica {parent_id} z alpha={alpha}, odległość={distance:.6f}")
                         break
                         
                 # Jeśli wciąż nie znaleziono, wybierz losowy obraz
                 if child_id is None:
                     logger.warning(f"[BŁĄD DZIECI] Nie znaleziono dziecka nawet z modyfikacją, próbuję losowo")
+                    print(f"[DEBUG CHILDREN] Nie znaleziono dziecka nawet z modyfikacją, próbuję losowo")
                     remaining_ids = set(img_id for img_id, _ in all_embeddings) - set(exclude_ids) - set([item["id"] for item in children]) - set(parent_ids)
                     if remaining_ids:
                         child_id = random.choice(list(remaining_ids))
                         logger.info(f"Wybrano losowe dziecko {child_id} dla rodzica {parent_id}")
+                        print(f"[DEBUG CHILDREN] Wybrano losowe dziecko {child_id} dla rodzica {parent_id}")
             else:
                 logger.info(f"Znaleziono dziecko {child_id} dla rodzica {parent_id}, odległość={distance:.6f}")
+                print(f"[DEBUG CHILDREN] Znaleziono dziecko {child_id} dla rodzica {parent_id}, odległość={distance:.6f}")
             
             if child_id is not None:
                 children.append({
@@ -1069,6 +1090,7 @@ def generate_children(
                 })
                 
     logger.info(f"Wygenerowano {len(children)} dzieci typu {image_type}")
+    print(f"[DEBUG CHILDREN] Wygenerowano {len(children)} dzieci typu {image_type}")
     return children
 
 
@@ -1218,6 +1240,84 @@ def generate_new_pool_for_session(
         logger.error(traceback.format_exc())
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Błąd serwera: {str(e)}")
+
+
+@router.post("/sessions/{session_id}/trigger-pool-generation", response_model=schemas.Message)
+def trigger_pool_generation(
+    session_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Triggera generowanie nowej puli dla użytkownika po kliknięciu podsumowania sesji."""
+    try:
+        # Sprawdź czy sesja istnieje i należy do użytkownika
+        session = db.query(SessionModel).filter(
+            SessionModel.id == session_id,
+            SessionModel.user_id == current_user.id
+        ).first()
+        
+        if not session:
+            raise HTTPException(status_code=404, detail="Sesja nie znaleziona")
+        
+        # Sprawdź czy istnieje już sesja PENDING dla użytkownika
+        pending_session = db.query(SessionModel).filter(
+            SessionModel.user_id == current_user.id,
+            SessionModel.status == "PENDING"
+        ).first()
+        
+        if pending_session:
+            logger.info(f"Istnieje już sesja PENDING dla użytkownika {current_user.id}, id={pending_session.id}")
+            return {"message": "Generowanie puli już w toku"}
+        
+        # Rozpocznij generowanie nowej puli w oparciu o aktualną sesję
+        logger.info(f"Rozpoczynam generowanie nowej puli dla użytkownika {current_user.id} (trigger)")
+        print(f"[DEBUG TRIGGER] Rozpoczynam generowanie nowej puli dla użytkownika {current_user.id}, sesja {session_id}")
+        
+        # Generuj nową pulę z algorytmem quasi-genetycznym
+        pos_pool_json, neg_pool_json = generate_pool_with_genetic_algorithm(session, db)
+        
+        # Tworzę nową sesję PENDING z wygenerowaną pulą
+        new_session = SessionModel(
+            user_id=current_user.id,
+            status="PENDING",
+            pos_pool_json=pos_pool_json,
+            neg_pool_json=neg_pool_json,
+            session_profit_factor=1.0,
+            remaining_pairs=6,
+            started_at=None  # Zostanie ustawione przy aktywacji
+        )
+        
+        db.add(new_session)
+        db.commit()
+        db.refresh(new_session)
+        
+        logger.info(f"Utworzono nową sesję PENDING (id={new_session.id}) dla użytkownika {current_user.id} (trigger)")
+        print(f"[DEBUG TRIGGER] Utworzono nową sesję PENDING (id={new_session.id}) dla użytkownika {current_user.id}")
+        
+        # Sprawdź statystyki wygenerowanej puli dla dodatkowego debugowania
+        try:
+            pos_stats = {
+                "total": len(pos_pool_json),
+                "bought": sum(1 for item in pos_pool_json if item.get("origin") == "bought"),
+                "children": sum(1 for item in pos_pool_json if item.get("origin") == "child"),
+                "random": sum(1 for item in pos_pool_json if item.get("origin") == "random")
+            }
+            neg_stats = {
+                "total": len(neg_pool_json),
+                "bought": sum(1 for item in neg_pool_json if item.get("origin") == "bought"),
+                "children": sum(1 for item in neg_pool_json if item.get("origin") == "child"),
+                "random": sum(1 for item in neg_pool_json if item.get("origin") == "random")
+            }
+            print(f"[DEBUG TRIGGER] Stats wygenerowanej puli - POS: {pos_stats}, NEG: {neg_stats}")
+        except Exception as e:
+            print(f"[DEBUG TRIGGER] Błąd podczas logowania statystyk puli: {str(e)}")
+        
+        return {"message": "Rozpoczęto generowanie nowej puli"}
+        
+    except Exception as e:
+        logger.error(f"Błąd podczas triggerowania generowania puli: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.put("/sessions/{session_id}/activate", response_model=SessionResponse)

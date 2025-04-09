@@ -306,6 +306,7 @@ class RoundResult(BaseModel):
     remaining_pairs: int
     session_profit_factor: float
     stimulus_url: Optional[str] = None
+    session_status: Optional[str] = None
 
 
 class GenerateNewPoolRequest(BaseModel):
@@ -316,3 +317,7 @@ class GenerateNewPoolRequest(BaseModel):
 class UserCredentials(BaseModel):
     username: str
     password: str 
+
+# Prosty model dla odpowiedzi z wiadomością
+class Message(BaseModel):
+    message: str
