@@ -23,7 +23,8 @@ const GameStates = {
 
 // Konfiguracja
 const CONFIG = {
-  API_TIMEOUT: 10000, // 10 sekund timeout dla zapytań API
+  API_TIMEOUT: 10000, // 10 sekund timeout dla standardowych zapytań API
+  SESSION_API_TIMEOUT: 60000, // 60 sekund timeout dla operacji związanych z sesjami
   PRICE_REFRESH_INTERVAL: 1000, // Interwał odświeżania ceny (ms)
   RESULT_DISPLAY_TIME: 2000, // Czas wyświetlania wyniku (ms)
   DEBUG: true // Włącza zaawansowane logowanie
@@ -127,7 +128,8 @@ class ApiService {
     }
     
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), CONFIG.API_TIMEOUT);
+    const timeoutValue = options.timeout || CONFIG.API_TIMEOUT;
+    const timeoutId = setTimeout(() => controller.abort(), timeoutValue);
     
     try {
       const response = await fetch(url, {
@@ -211,7 +213,9 @@ class ApiService {
    */
   async getSessionStatus(sessionId) {
     try {
-      return await this.fetchWithAuth(`/api/sessions/${sessionId}/status`);
+      return await this.fetchWithAuth(`/api/sessions/${sessionId}/status`, {
+        timeout: CONFIG.SESSION_API_TIMEOUT
+      });
     } catch (error) {
       Logger.error('Błąd podczas pobierania statusu sesji', error);
       throw error;
@@ -224,7 +228,8 @@ class ApiService {
   async checkSessionStatus() {
     try {
       return await this.fetchWithAuth('/api/sessions', {
-        method: 'POST'
+        method: 'POST',
+        timeout: CONFIG.SESSION_API_TIMEOUT
       });
     } catch (error) {
       Logger.error('Błąd podczas sprawdzania statusu sesji', error);
@@ -238,7 +243,8 @@ class ApiService {
   async resumeSession(sessionId) {
     try {
       return await this.fetchWithAuth(`/api/sessions/resume/${sessionId}`, {
-        method: 'POST'
+        method: 'POST',
+        timeout: CONFIG.SESSION_API_TIMEOUT
       });
     } catch (error) {
       Logger.error(`Błąd podczas wznawiania sesji ${sessionId}`, error);
@@ -252,7 +258,8 @@ class ApiService {
   async createSession() {
     try {
       return await this.fetchWithAuth('/api/sessions/new', {
-        method: 'POST'
+        method: 'POST',
+        timeout: CONFIG.SESSION_API_TIMEOUT
       });
     } catch (error) {
       Logger.error('Błąd podczas tworzenia nowej sesji', error);
@@ -1115,7 +1122,8 @@ class GameController {
         }
       } else {
         // Brak sesji - tworzymy nową
-        UIController.updateLoadingMessage('Tworzenie nowej sesji...');
+        Logger.info('Brak istniejącej sesji, tworzenie nowej');
+        UIController.updateLoadingMessage('Tworzenie nowej sesji... (może to potrwać do 60 sekund)');
         
         try {
           const newSession = await this.apiService.createSession();
@@ -1130,10 +1138,33 @@ class GameController {
     } catch (error) {
       Logger.error('Błąd podczas sprawdzania/tworzenia sesji', error);
       UIController.hideLoadingOverlay();
+      
+      // Wyświetl przyjazny komunikat o błędzie
+      const errorContainer = document.querySelector('#game-container');
+      if (errorContainer) {
+        const errorMessage = document.createElement('div');
+        errorMessage.className = 'error-message';
+        errorMessage.innerHTML = `
+          <h3>Problem z połączeniem</h3>
+          <p>Generowanie nowej sesji może zająć dłuższy czas. Możesz spróbować ponownie za chwilę lub odświeżyć stronę.</p>
+          <p class="error-details">${error.message}</p>
+          <button id="retry-btn" class="button primary-button">Spróbuj ponownie</button>
+        `;
+        
+        // Wyczyść istniejącą zawartość i dodaj komunikat
+        errorContainer.innerHTML = '';
+        errorContainer.appendChild(errorMessage);
+        
+        // Dodaj obsługę przycisku
+        document.querySelector('#retry-btn').addEventListener('click', () => {
+          window.location.reload();
+        });
+      }
+      
       throw error;
     }
   }
-
+  
   /**
    * Obsługa sesji w trakcie generowania
    */
