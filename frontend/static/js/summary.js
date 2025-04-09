@@ -719,8 +719,8 @@ function renderRoundsDetails(rounds) {
 
 // Funkcja przełączająca widoczność szczegółów rund
 function toggleRoundsDetails() {
-    const detailsContainer = getElement('rounds-details');
-    const button = getElement('show-details-button');
+    const detailsContainer = document.getElementById('rounds-details');
+    const button = document.getElementById('show-details-button');
     
     if (!detailsContainer || !button) {
         console.error('Nie znaleziono elementów do przełączania widoku szczegółów');
@@ -830,17 +830,42 @@ async function checkPoolReadiness(sessionId, retryCount = 0) {
             
             // Wyświetl statystyki nowej puli
             displayPoolStatistics(data);
-        } else if (retryCount < 150) { // Ograniczenie do 150 prób (5 minut przy 2s interwale)
-            // Jeszcze nie gotowa - sprawdź ponownie za 2 sekundy
-            setTimeout(() => checkPoolReadiness(sessionId, retryCount + 1), 2000);
         } else {
-            // Przekroczono limit prób - wyświetl komunikat
-            console.error('Nie udało się wygenerować puli w oczekiwanym czasie');
-            const newSessionButton = document.getElementById('new-session-button');
-            if (newSessionButton) {
-                newSessionButton.disabled = false;
-                newSessionButton.classList.remove('loading');
-                newSessionButton.innerHTML = 'Nowa sesja';
+            // Pula nie jest gotowa - sprawdź czy trzeba ją zainicjować
+            if (retryCount === 0) {
+                console.log("Brak sesji PENDING, inicjuję generowanie nowej puli...");
+                // Wywołaj endpoint trigger_pool_generation aby rozpocząć generowanie nowej puli
+                const triggerResponse = await fetch(`/api/sessions/${sessionId}/trigger-pool-generation`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (!triggerResponse.ok) {
+                    console.error("Błąd podczas inicjowania generowania puli:", await triggerResponse.text());
+                } else {
+                    console.log("Zainicjowano generowanie nowej puli");
+                    const newSessionButton = document.getElementById('new-session-button');
+                    if (newSessionButton) {
+                        newSessionButton.innerHTML = '<div class="spinner"></div> Generowanie puli...';
+                    }
+                }
+            }
+            
+            // Jeszcze nie gotowa - sprawdź ponownie za 2 sekundy
+            if (retryCount < 150) { // Ograniczenie do 150 prób (5 minut przy 2s interwale)
+                setTimeout(() => checkPoolReadiness(sessionId, retryCount + 1), 2000);
+            } else {
+                // Przekroczono limit prób - wyświetl komunikat
+                console.error('Nie udało się wygenerować puli w oczekiwanym czasie');
+                const newSessionButton = document.getElementById('new-session-button');
+                if (newSessionButton) {
+                    newSessionButton.disabled = false;
+                    newSessionButton.classList.remove('loading');
+                    newSessionButton.innerHTML = 'Nowa sesja';
+                }
             }
         }
     } catch (error) {
