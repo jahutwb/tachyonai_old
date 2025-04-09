@@ -15,19 +15,29 @@ from .init_db import init_db
 from .routers import sessions_router, rounds_router, images_router, user_router, price_router
 
 # Inicjalizacja loggera
+log_path = os.path.join("logs", "app.log")
+os.makedirs(os.path.dirname(log_path), exist_ok=True)  # Upewniamy się, że katalog istnieje
+
 logging.basicConfig(
-    level=logging.DEBUG,  # Zwiększenie poziomu logowania z INFO na DEBUG
+    level=logging.DEBUG,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s - %(pathname)s:%(lineno)d",
     handlers=[
-        logging.StreamHandler(),  # Logowanie na standardowe wyjście
-        logging.FileHandler("tachyonai.log")  # Dodatkowo zapis do pliku
+        logging.StreamHandler(),
+        logging.FileHandler(log_path, mode='a')  # Tryb 'a' (append) zamiast domyślnego 'w' (write)
     ]
 )
 logger = logging.getLogger(__name__)
 
-# Ustawienie poziomu dla loggerów bibliotek
+# Testujemy zapis do logu
+logger.debug("Test zapisu do logu")
+logger.info("Konfiguracja loggera zakończona")
+
+# Dodatkowa konfiguracja loggerów
 logging.getLogger("uvicorn").setLevel(logging.INFO)
 logging.getLogger("sqlalchemy.engine").setLevel(logging.INFO)
+
+# Logowanie uruchomienia aplikacji
+logger.info("Aplikacja uruchomiona")
 
 # Inicjalizacja bazy danych
 init_db()
