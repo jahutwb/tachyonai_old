@@ -321,3 +321,28 @@ class UserCredentials(BaseModel):
 # Prosty model dla odpowiedzi z wiadomością
 class Message(BaseModel):
     message: str
+
+
+# Nowe modele do obsługi zarządzania sesją
+class SessionStats(BaseModel):
+    success_count: int
+    failure_count: int
+    success_rate: float
+    profit_factor: float
+    remaining_pairs: int
+
+
+class PoolOriginStats(BaseModel):
+    pos_origins: Dict[str, int]
+    neg_origins: Dict[str, int]
+    total_pairs: int
+
+
+class SessionCreateResponse(BaseModel):
+    session_exists: bool
+    session_status: str
+    session_id: int
+    has_unfinished_round: bool
+    unfinished_round_id: Optional[int] = None
+    session_stats: Optional[SessionStats] = None
+    new_pool_stats: Optional[PoolOriginStats] = None

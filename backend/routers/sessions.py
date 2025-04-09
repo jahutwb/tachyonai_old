@@ -18,17 +18,16 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-@router.post("/sessions", response_model=schemas.Session, status_code=status.HTTP_201_CREATED)
+@router.post("/sessions", response_model=schemas.SessionCreateResponse, status_code=status.HTTP_200_OK)
 def create_session(
     current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ):
     """
-    Tworzy nową sesję dla użytkownika lub wznawia istniejącą.
+    Sprawdza status sesji użytkownika i zwraca odpowiednią informację.
     Logika:
-    1. Sprawdza czy istnieje aktywna sesja - jeśli tak, zwraca ją
-    2. Sprawdza czy istnieje sesja PENDING - jeśli tak, aktywuje ją
-    3. Sprawdza czy istnieje zakończona sesja - jeśli tak, generuje nową pulę algorytmem quasi-genetycznym
-    4. Jeśli nie ma żadnej sesji, tworzy nową z losową pulą
+    1. Sprawdza czy istnieje aktywna sesja - jeśli tak, zwraca informację o tym
+    2. Sprawdza czy istnieje sesja PENDING - jeśli tak, zwraca informację o tym
+    3. Jeśli nie ma aktywnej ani oczekującej sesji, tworzy nową
     """
     try:
         # 1. Sprawdź czy istnieje aktywna sesja
@@ -39,16 +38,34 @@ def create_session(
         
         if active_session:
             logger.info(f"Znaleziono aktywną sesję {active_session.id} dla użytkownika {current_user.id}")
-            # Sprawdź czy pule są puste
-            if not active_session.pos_pool_json or not active_session.neg_pool_json:
-                logger.info(f"Pule są puste, generuję nową pulę")
-                pos_pool_json, neg_pool_json = generate_random_pool(db, 6)
-                active_session.pos_pool_json = pos_pool_json
-                active_session.neg_pool_json = neg_pool_json
-                active_session.remaining_pairs = 6
-                db.commit()
-                db.refresh(active_session)
-            return active_session
+            
+            # Sprawdź, czy są jakieś niedokończone rundy
+            unfinished_round = db.query(Round).filter(
+                Round.session_id == active_session.id,
+                Round.result == None
+            ).order_by(Round.id.desc()).first()
+            
+            # Obliczyć statystyki sesji
+            pos_pool_json = active_session.pos_pool_json if isinstance(active_session.pos_pool_json, list) else json.loads(active_session.pos_pool_json)
+            neg_pool_json = active_session.neg_pool_json if isinstance(active_session.neg_pool_json, list) else json.loads(active_session.neg_pool_json)
+            
+            success_count = sum(item.get("successes", 0) for item in pos_pool_json) + sum(item.get("successes", 0) for item in neg_pool_json)
+            failure_count = sum(item.get("failures", 0) for item in pos_pool_json) + sum(item.get("failures", 0) for item in neg_pool_json)
+            
+            return {
+                "session_exists": True,
+                "session_status": "ACTIVE",
+                "session_id": active_session.id,
+                "has_unfinished_round": unfinished_round is not None,
+                "unfinished_round_id": unfinished_round.id if unfinished_round else None,
+                "session_stats": {
+                    "success_count": success_count,
+                    "failure_count": failure_count,
+                    "success_rate": success_count / (success_count + failure_count) * 100 if (success_count + failure_count) > 0 else 0,
+                    "profit_factor": active_session.session_profit_factor,
+                    "remaining_pairs": active_session.remaining_pairs
+                }
+            }
             
         # 2. Sprawdź czy istnieje sesja PENDING
         pending_session = db.query(SessionModel).filter(
@@ -57,16 +74,43 @@ def create_session(
         ).first()
         
         if pending_session:
-            logger.info(f"Znaleziono sesję PENDING {pending_session.id}, aktywuję ją")
-            pending_session.status = "ACTIVE"
-            pending_session.started_at = datetime.utcnow()
-            pending_session.session_profit_factor = 1.0  # Resetujemy do 1.0
-            pending_session.remaining_pairs = 6  # Upewniamy się, że mamy 6 par
-            db.commit()
-            db.refresh(pending_session)
-            return pending_session
+            logger.info(f"Znaleziono sesję PENDING {pending_session.id} dla użytkownika {current_user.id}")
             
-        # 3. Sprawdź czy istnieje zakończona sesja
+            # Obliczyć statystyki dla nowej puli
+            pos_pool_json = pending_session.pos_pool_json if isinstance(pending_session.pos_pool_json, list) else json.loads(pending_session.pos_pool_json)
+            neg_pool_json = pending_session.neg_pool_json if isinstance(pending_session.neg_pool_json, list) else json.loads(pending_session.neg_pool_json)
+            
+            # Liczenie statystyk dla nowej, oczekującej puli
+            pos_origins = {"child": 0, "bought": 0, "random": 0}
+            neg_origins = {"child": 0, "bought": 0, "random": 0}
+            
+            for item in pos_pool_json:
+                origin = item.get("origin", "unknown")
+                if origin in pos_origins:
+                    pos_origins[origin] += 1
+            
+            for item in neg_pool_json:
+                origin = item.get("origin", "unknown")
+                if origin in neg_origins:
+                    neg_origins[origin] += 1
+            
+            return {
+                "session_exists": True,
+                "session_status": "PENDING",
+                "session_id": pending_session.id,
+                "has_unfinished_round": False,
+                "unfinished_round_id": None,
+                "new_pool_stats": {
+                    "pos_origins": pos_origins,
+                    "neg_origins": neg_origins,
+                    "total_pairs": min(len(pos_pool_json), len(neg_pool_json))
+                }
+            }
+        
+        # 3. Jeśli nie ma aktywnej ani oczekującej sesji, tworzymy nową
+        logger.info(f"Brak aktywnej ani oczekującej sesji dla użytkownika {current_user.id}, tworzenie nowej")
+        
+        # Sprawdź czy istnieje zakończona sesja
         completed_session = db.query(SessionModel).filter(
             SessionModel.user_id == current_user.id,
             SessionModel.status == "COMPLETED"
@@ -75,24 +119,9 @@ def create_session(
         if completed_session:
             logger.info(f"Znaleziono zakończoną sesję {completed_session.id}, generuję nową pulę")
             pos_pool_json, neg_pool_json = generate_pool_with_genetic_algorithm(completed_session, db)
-            
-            new_session = SessionModel(
-                user_id=current_user.id,
-                status="ACTIVE",  # Od razu aktywna
-                pos_pool_json=pos_pool_json,
-                neg_pool_json=neg_pool_json,
-                session_profit_factor=1.0,
-                remaining_pairs=6,
-                started_at=datetime.utcnow()
-            )
-            db.add(new_session)
-            db.commit()
-            db.refresh(new_session)
-            return new_session
-            
-        # 4. Jeśli nie ma żadnej sesji, utwórz nową z losową pulą
-        logger.info(f"Brak poprzednich sesji, tworzę nową z losową pulą")
-        pos_pool_json, neg_pool_json = generate_random_pool(db, 6)
+        else:
+            logger.info(f"Brak poprzednich sesji, tworzę nową z losową pulą")
+            pos_pool_json, neg_pool_json = generate_random_pool(db, 6)
         
         # Dodatkowe zabezpieczenie przed nieprawidłowymi danymi JSON
         if not pos_pool_json or not neg_pool_json:
@@ -113,10 +142,133 @@ def create_session(
         db.commit()
         db.refresh(new_session)
         
-        return new_session
+        # Zwróć informacje o nowej sesji
+        return {
+            "session_exists": True,
+            "session_status": "ACTIVE",
+            "session_id": new_session.id,
+            "has_unfinished_round": False,
+            "unfinished_round_id": None,
+            "session_stats": {
+                "success_count": 0,
+                "failure_count": 0,
+                "success_rate": 0,
+                "profit_factor": 1.0,
+                "remaining_pairs": new_session.remaining_pairs
+            }
+        }
             
     except Exception as e:
-        logger.error(f"Błąd podczas tworzenia/wznawiania sesji: {str(e)}")
+        logger.error(f"Błąd podczas sprawdzania/tworzenia sesji: {str(e)}")
+        logger.error(traceback.format_exc())
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/sessions/resume/{session_id}", response_model=schemas.Session)
+def resume_session(
+    session_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Wznawia istniejącą sesję.
+    """
+    try:
+        # Pobierz sesję i sprawdź czy istnieje
+        session = db.query(SessionModel).filter(
+            SessionModel.id == session_id,
+            SessionModel.user_id == current_user.id
+        ).first()
+        
+        if not session:
+            raise HTTPException(status_code=404, detail="Sesja nie znaleziona")
+        
+        # Sprawdź czy sesja ma status ACTIVE
+        if session.status == "ACTIVE":
+            return session
+        
+        # Jeśli sesja ma status PENDING, aktywuj ją
+        if session.status == "PENDING":
+            session.status = "ACTIVE"
+            session.started_at = datetime.utcnow()
+            session.session_profit_factor = 1.0
+            
+            # Sprawdź czy pule są puste
+            if not session.pos_pool_json or not session.neg_pool_json:
+                logger.info(f"Pule są puste, generuję nową pulę")
+                pos_pool_json, neg_pool_json = generate_random_pool(db, 6)
+                session.pos_pool_json = pos_pool_json
+                session.neg_pool_json = neg_pool_json
+                session.remaining_pairs = 6
+            
+            db.commit()
+            db.refresh(session)
+            return session
+        
+        # Jeśli sesja ma status COMPLETED, zwróć błąd
+        if session.status == "COMPLETED":
+            raise HTTPException(status_code=400, detail="Nie można wznowić zakończonej sesji")
+        
+        # Na wszelki wypadek, jeśli status jest nieznany
+        raise HTTPException(status_code=400, detail=f"Nie można wznowić sesji o statusie {session.status}")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Błąd podczas wznawiania sesji: {str(e)}")
+        logger.error(traceback.format_exc())
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/sessions/new", response_model=schemas.Session)
+def create_new_session(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Tworzy nową sesję, ignorując istniejące sesje.
+    """
+    try:
+        # Sprawdź czy istnieje zakończona sesja
+        completed_session = db.query(SessionModel).filter(
+            SessionModel.user_id == current_user.id,
+            SessionModel.status == "COMPLETED"
+        ).order_by(SessionModel.ended_at.desc()).first()
+        
+        if completed_session:
+            logger.info(f"Znaleziono zakończoną sesję {completed_session.id}, generuję nową pulę algorytmem quasi-genetycznym")
+            pos_pool_json, neg_pool_json = generate_pool_with_genetic_algorithm(completed_session, db)
+        else:
+            logger.info(f"Brak poprzednich sesji, tworzę nową z losową pulą")
+            pos_pool_json, neg_pool_json = generate_random_pool(db, 6)
+        
+        # Dodatkowe zabezpieczenie przed nieprawidłowymi danymi JSON
+        if not pos_pool_json or not neg_pool_json:
+            logger.warning("Pule obrazów są puste, używam pustych list")
+            pos_pool_json = []
+            neg_pool_json = []
+        
+        new_session = SessionModel(
+            user_id=current_user.id,
+            status="ACTIVE",
+            pos_pool_json=pos_pool_json,
+            neg_pool_json=neg_pool_json,
+            session_profit_factor=1.0,
+            remaining_pairs=6,
+            started_at=datetime.utcnow()
+        )
+        
+        # Dodaj sesję do bazy danych
+        db.add(new_session)
+        db.commit()
+        db.refresh(new_session)
+        
+        return new_session
+        
+    except Exception as e:
+        logger.error(f"Błąd podczas tworzenia nowej sesji: {str(e)}")
         logger.error(traceback.format_exc())
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
@@ -1250,7 +1402,7 @@ def trigger_pool_generation(
 ):
     """Triggera generowanie nowej puli dla użytkownika po kliknięciu podsumowania sesji."""
     try:
-        # Sprawdź czy sesja istnieje i należy do użytkownika
+        # Sprawdź czy sesja istnieje i należy do bieżącego użytkownika
         session = db.query(SessionModel).filter(
             SessionModel.id == session_id,
             SessionModel.user_id == current_user.id

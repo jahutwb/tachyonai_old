@@ -4,6 +4,7 @@ from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool
+from sqlalchemy.sql import text
 from fastapi.testclient import TestClient
 import sys
 from dotenv import load_dotenv
@@ -13,146 +14,147 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from backend.main import app
 from backend.database import Base, get_db
-from backend.auth import get_password_hash
-from backend.models import User, Image, ImageTypeEnum
+from backend.auth import get_password_hash, create_access_token
+from backend.models import User, Image, ImageTypeEnum, UserRoleEnum
+from datetime import timedelta
+import uuid
 
 # Ładowanie zmiennych środowiskowych z pliku .env.test
 load_dotenv(".env.test", override=True)
 
 # Konfiguracja testowej bazy danych
-TEST_DATABASE_URL = "sqlite:///./test.db"
+TEST_SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
 
+engine = create_engine(
+    TEST_SQLALCHEMY_DATABASE_URL,
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
+)
+
+TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# Funkcja, która będzie używana do nadpisania oryginalnej funkcji get_db w aplikacji
+def override_get_db():
+    db = TestingSessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+# Nadpisanie funkcji get_db w aplikacji
+app.dependency_overrides[get_db] = override_get_db
 
 @pytest.fixture(scope="session")
-def test_engine():
-    """Tworzy silnik testowej bazy danych w pamięci."""
-    # Używamy SQLite w pamięci
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    # Tworzymy wszystkie tabele
-    Base.metadata.create_all(bind=engine)
-    return engine
-
+def test_client():
+    """Fixture do testowania API z FastAPI."""
+    client = TestClient(app)
+    return client
 
 @pytest.fixture(scope="function")
-def test_db(test_engine):
-    """Tworzy sesję testowej bazy danych."""
-    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
-    # Utwórz sesję bazy danych
-    session = SessionLocal()
+def test_db():
+    """Fixture tworzący testową bazę danych."""
+    # Tworzenie tabel
+    Base.metadata.create_all(bind=engine)
     
-    # Dodaj testowego użytkownika
-    hashed_password = get_password_hash("test_password")
-    test_user = session.query(User).filter(User.username == "test_user").first()
-    if not test_user:
-        test_user = User(username="test_user", password_hash=hashed_password)
-        session.add(test_user)
-        session.commit()
+    # Inicjalizacja testowych obrazów, jeśli potrzebne
+    init_test_images(TestingSessionLocal())
+    
+    # Zwrócenie sesji bazy danych
+    db = TestingSessionLocal()
+    
+    try:
+        yield db
+    finally:
+        # Czyszczenie bazy - usuwanie wszystkich danych
+        db.execute(text("DELETE FROM rounds"))
+        db.execute(text("DELETE FROM sessions"))
+        db.execute(text("DELETE FROM users"))
+        db.execute(text("DELETE FROM images"))
+        
+        db.commit()
+        db.close()
+
+def init_test_images(db):
+    """Inicjalizacja testowych obrazów w bazie danych."""
+    # Sprawdź czy już mamy obrazy w bazie
+    images_count = db.query(Image).count()
+    if images_count > 0:
+        return
     
     # Dodaj testowe obrazy
-    for i in range(5):
-        img_pos = Image(
-            path=f"/test/pos/image_{i}.jpg",
+    for i in range(1, 11):  # 10 obrazów każdego typu
+        # Pozytywne obrazy
+        pos_image = Image(
+            path=f"test_images/positive_{i}.jpg",
             type=ImageTypeEnum.POSITIVE,
-            embedding=[0.1] * 512,
-            total_successes=i,
-            total_failures=0,
-            total_profit_factor=1.0 + (i * 0.01)
+            embedding=[0.1 * i for _ in range(10)],  # Symulacja wektora embeddingu
         )
-        img_neg = Image(
-            path=f"/test/neg/image_{i}.jpg",
-            type=ImageTypeEnum.NEGATIVE,
-            embedding=[0.1] * 512,
-            total_successes=i,
-            total_failures=0,
-            total_profit_factor=1.0 + (i * 0.01)
-        )
-        session.add(img_pos)
-        session.add(img_neg)
-    
-    session.commit()
-    
-    # Zwróć sesję
-    yield session
-    
-    # Wyczyszczenie tabeli po teście
-    for tbl in reversed(Base.metadata.sorted_tables):
-        session.execute(tbl.delete())
-    session.commit()
-    # Zamknij sesję po teście
-    session.close()
-
-
-@pytest.fixture(scope="function")
-def test_client(test_db):
-    """Tworzy testowego klienta FastAPI z podpiętą testową bazą danych."""
-    def override_get_db():
-        try:
-            yield test_db
-        finally:
-            pass
+        db.add(pos_image)
         
-    # Nadpisz funkcję get_db aby korzystała z testowej bazy
-    app.dependency_overrides[get_db] = override_get_db
+        # Negatywne obrazy
+        neg_image = Image(
+            path=f"test_images/negative_{i}.jpg",
+            type=ImageTypeEnum.NEGATIVE,
+            embedding=[0.1 * i for _ in range(10)],  # Symulacja wektora embeddingu
+        )
+        db.add(neg_image)
     
-    # Utwórz testowego klienta
-    with TestClient(app) as client:
-        yield client
-    
-    # Wyczyść nadpisania po teście
-    app.dependency_overrides = {}
+    db.commit()
 
+def create_test_user(db, username=None, password="test_password"):
+    """Tworzy testowego użytkownika z unikalną nazwą"""
+    # Generowanie unikalnej nazwy użytkownika
+    if username is None:
+        username = f"test_user_{str(uuid.uuid4())[:8]}"
+    
+    # Usunięcie istniejącego użytkownika o tej samej nazwie (jeśli istnieje)
+    existing_user = db.query(User).filter(User.username == username).first()
+    if existing_user:
+        db.delete(existing_user)
+        db.commit()
+    
+    # Tworzenie hashu hasła
+    hashed_password = get_password_hash(password)
+    
+    # Tworzenie nowego użytkownika
+    user = User(
+        username=username,
+        password_hash=hashed_password,
+        role=UserRoleEnum.USER
+    )
+    
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+def get_test_user_token(user):
+    """Generuje token JWT dla testowego użytkownika"""
+    access_token_expires = timedelta(minutes=30)
+    access_token = create_access_token(
+        data={"sub": user.username}, 
+        expires_delta=access_token_expires
+    )
+    return access_token
+
+def get_authorized_client(token):
+    """Tworzy klienta testowego z ustawionym tokenem uwierzytelniającym"""
+    client = TestClient(app)
+    client.headers = {"Authorization": f"Bearer {token}"}
+    return client
 
 @pytest.fixture
 def test_user(test_db):
     """Tworzy testowego użytkownika w bazie danych."""
-    from backend.models import User, UserRoleEnum
-    
-    user = User(
-        username="testuser",
-        password_hash=get_password_hash("password123"),
-        role=UserRoleEnum.USER
-    )
-    test_db.add(user)
-    test_db.commit()
-    test_db.refresh(user)
+    user = create_test_user(test_db)
     return user
 
-
 @pytest.fixture
-def test_admin(test_db):
-    """Tworzy testowego administratora w bazie danych."""
-    from backend.models import User, UserRoleEnum
-    
-    admin = User(
-        username="testadmin",
-        password_hash=get_password_hash("admin123"),
-        role=UserRoleEnum.ADMIN
-    )
-    test_db.add(admin)
-    test_db.commit()
-    test_db.refresh(admin)
-    return admin
-
-
-@pytest.fixture
-def test_user_token(test_client, test_user):
+def test_user_token(test_user):
     """Zwraca token JWT dla testowego użytkownika."""
-    response = test_client.post(
-        "/token",
-        data={"username": test_user.username, "password": "password123"}
-    )
-    return response.json()["access_token"]
-
+    return get_test_user_token(test_user)
 
 @pytest.fixture
-def test_admin_token(test_client, test_admin):
-    """Zwraca token JWT dla testowego administratora."""
-    response = test_client.post(
-        "/token",
-        data={"username": test_admin.username, "password": "admin123"}
-    )
-    return response.json()["access_token"] 
+def authorized_client(test_user_token):
+    """Zwraca klienta testowego z ustawionym tokenem uwierzytelniającym."""
+    return get_authorized_client(test_user_token)
