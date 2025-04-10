@@ -688,16 +688,6 @@ def generate_pending_session(
     try:
         logger.info(f"Rozpoczynam generowanie nowej puli dla użytkownika {current_user.id}")
         
-        # Sprawdzamy, czy istnieje już sesja PENDING dla tego użytkownika
-        existing_pending = db.query(SessionModel).filter(
-            SessionModel.user_id == current_user.id,
-            SessionModel.status == "PENDING"
-        ).first()
-        
-        if existing_pending:
-            logger.info(f"Istnieje już sesja PENDING (id={existing_pending.id}) dla użytkownika {current_user.id}")
-            return {"status": "success", "message": "Sesja PENDING już istnieje"}
-        
         # Pobieramy poprzednią sesję (jeśli podano jej ID)
         previous_session = None
         if request.previous_session_id:
