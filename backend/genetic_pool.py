@@ -217,7 +217,7 @@ def generate_children(
             # Generuj dziecko
             found_child = False
             attempts = 0
-            max_attempts = 10
+            max_attempts = 5  # Maksymalna liczba prób z różnymi długościami wektora
             
             while not found_child and attempts < max_attempts:
                 # Dodaj losowy szum do wektora różnicy
@@ -230,7 +230,8 @@ def generate_children(
                     child_direction = child_direction / norm
                 
                 # Oblicz embedding dziecka (przesunięcie w kierunku wektora różnicy)
-                shift_scale = random.uniform(0.1, 0.3)
+                # Zwiększamy skalę przesunięcia z każdą próbą
+                shift_scale = 0.1 + (attempts * 0.1)  # Od 0.1 do 0.5
                 child_embedding = np.array(parent_embedding) + child_direction * shift_scale
                 
                 # Normalizacja embeddingu dziecka
@@ -247,24 +248,6 @@ def generate_children(
                 
                 # Wywołaj funkcję find_nearest_image
                 result = find_nearest_image(db, child_embedding, exclude_ids)
-                
-                if result is None:
-                    # Jeśli nie znaleziono, spróbuj z większym przesunięciem
-                    logger.info(f"Nie znaleziono dziecka, próba z większym przesunięciem.")
-                    shift_scale = random.uniform(0.3, 0.5)
-                    child_embedding = np.array(parent_embedding) + child_direction * shift_scale
-                    
-                    # Normalizacja embeddingu dziecka
-                    norm = np.linalg.norm(child_embedding)
-                    if norm > 0:
-                        child_embedding = child_embedding / norm
-                    
-                    # Konwertuj embedding na listę, jeśli jest tablicą numpy
-                    if isinstance(child_embedding, np.ndarray):
-                        child_embedding = child_embedding.tolist()
-                    
-                    # Wywołaj funkcję find_nearest_image ponownie
-                    result = find_nearest_image(db, child_embedding, exclude_ids)
                 
                 if result is not None:
                     # Sprawdź, czy znaleziony obraz jest odpowiedniego typu (pozytywny/negatywny)
@@ -284,15 +267,16 @@ def generate_children(
                         )
                         children.append(child)
                         
-                        logger.info(f"Wygenerowano dziecko {child_id} od rodzica {parent_id}.")
+                        logger.info(f"Wygenerowano dziecko {child_id} od rodzica {parent_id} (próba {attempts+1}, skala={shift_scale:.2f}).")
                     else:
-                        logger.warning(f"Znaleziony obraz {result['id']} ma niewłaściwy typ {result['type']}, oczekiwano {'POSITIVE' if is_positive else 'NEGATIVE'}.")
+                        logger.warning(f"Znaleziony obraz {result['id']} ma niewłaściwy typ {result['type']}, oczekiwano {'POSITIVE' if is_positive else 'NEGATIVE'}. Próba {attempts+1}, skala={shift_scale:.2f}")
                         attempts += 1
                 else:
+                    logger.warning(f"Nie znaleziono dziecka dla rodzica {parent_id}. Próba {attempts+1}, skala={shift_scale:.2f}")
                     attempts += 1
             
             if not found_child:
-                logger.warning(f"Nie udało się wygenerować dziecka dla rodzica {parent_id} po {max_attempts} próbach.")
+                logger.warning(f"Nie udało się wygenerować dziecka dla rodzica {parent_id} po {max_attempts} próbach z różnymi skalami przesunięcia.")
                 # Jeśli nie udało się wygenerować dziecka po wszystkich próbach, użyj losowego obrazu
                 random_image = get_random_images_as_pool_items(db, 1, is_positive, exclude_ids)
                 if random_image:
@@ -458,8 +442,8 @@ def process_pool_generation(
             points -= success_count
             logger.info(f"Kupiono obraz id={item['id']} za {success_count} punktów. Pozostało: {points} punktów.")
             
-            # Jeśli wyczerpaliśmy punkty, kończymy proces kupowania
-            if points <= 0:
+            # Jeśli wyczerpaliśmy punkty lub zapełniliśmy pulę, kończymy
+            if points <= 0 or bought_count >= num_pairs:
                 break
         
         logger.info(f"Kupiono {bought_count} obrazów.")
