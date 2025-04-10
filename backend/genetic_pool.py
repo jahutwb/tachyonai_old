@@ -230,8 +230,8 @@ def generate_children(
                     child_direction = child_direction / norm
                 
                 # Oblicz embedding dziecka (przesunięcie w kierunku wektora różnicy)
-                # Zwiększamy skalę przesunięcia z każdą próbą
-                shift_scale = 0.1 + (attempts * 0.1)  # Od 0.1 do 0.5
+                # Przedłużamy wektor różnicy z każdą próbą (1.0, 2.0, 3.0, 4.0, 5.0)
+                shift_scale = 1.0 + attempts * 1.0
                 child_embedding = np.array(parent_embedding) + child_direction * shift_scale
                 
                 # Normalizacja embeddingu dziecka
