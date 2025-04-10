@@ -219,39 +219,42 @@ def generate_children(
             attempts = 0
             max_attempts = 5  # Maksymalna liczba prób z różnymi długościami wektora
             
+            # Początkowy wektor różnicy
+            current_direction = difference_vector.copy()
+            
+            logger.info(f"Początkowa długość wektora różnicy: {np.linalg.norm(current_direction):.2f}")
+            logger.info(f"Początkowy kierunek wektora: {current_direction[:3]}...")
+            
             while not found_child and attempts < max_attempts:
-                # Dodaj losowy szum do wektora różnicy
-                noise = np.random.randn(len(difference_vector)) * 0.1
-                child_direction = difference_vector + noise
+                # Dodaj losowy szum do wektora
+                noise = np.random.randn(len(current_direction)) * 0.1
+                current_direction += noise
                 
-                # Normalizacja wektora
-                norm = np.linalg.norm(child_direction)
-                if norm > 0:
-                    child_direction = child_direction / norm
+                logger.info(f"Próba {attempts+1}: Dodano szum do wektora")
+                logger.info(f"  - Długość wektora po dodaniu szumu: {np.linalg.norm(current_direction):.2f}")
+                logger.info(f"  - Kierunek wektora po szumie: {current_direction[:3]}...")
                 
-                # Oblicz embedding dziecka (przesunięcie w kierunku wektora różnicy)
-                # Przedłużamy wektor różnicy z każdą próbą (1.0, 2.0, 3.0, 4.0, 5.0)
-                shift_scale = 1.0 + attempts * 1.0
-                child_embedding = np.array(parent_embedding) + child_direction * shift_scale
+                # Przesuń się o wektor kierunku od wektora rodzica
+                candidate_embedding = np.array(parent_embedding) + current_direction
                 
-                # Konwertuj embedding na listę, jeśli jest tablicą numpy
-                if isinstance(child_embedding, np.ndarray):
-                    child_embedding = child_embedding.tolist()
+                logger.info(f"Próba {attempts+1}: Wygenerowano kandydata do dziecka")
+                logger.info(f"  - Odległość kandydata od rodzica: {np.linalg.norm(candidate_embedding - np.array(parent_embedding)):.2f}")
                 
-                # Znajdź najbliższy obraz
+                # Szukaj najbliższego obrazu
                 from .embedding import find_nearest_image
-                
-                # Wywołaj funkcję find_nearest_image
-                result = find_nearest_image(db, child_embedding, exclude_ids)
+                result, distance = find_nearest_image(db, candidate_embedding.tolist())
                 
                 if result is not None:
-                    # Sprawdź, czy znaleziony obraz jest odpowiedniego typu (pozytywny/negatywny)
-                    is_correct_type = (result["type"] == "POSITIVE") if is_positive else (result["type"] == "NEGATIVE")
-                    
-                    if is_correct_type:
+                    # Sprawdź czy wynik nie jest na liście exclude_ids
+                    if result["id"] not in exclude_ids:
+                        # Znaleziono obraz spoza exclude_ids
                         found_child = True
                         child_id = result["id"]
-                        exclude_ids.append(child_id)
+                        
+                        logger.info(f"Próba {attempts+1}: Znaleziono nowe dziecko!")
+                        logger.info(f"  - ID dziecka: {child_id}")
+                        logger.info(f"  - Odległość od kandydata: {distance:.2f}")
+                        logger.info(f"  - Długość wektora różnicy: {np.linalg.norm(current_direction):.2f}")
                         
                         # Dodaj dziecko do listy
                         child = PoolImageItem(
@@ -262,14 +265,25 @@ def generate_children(
                         )
                         children.append(child)
                         
-                        logger.info(f"Wygenerowano dziecko {child_id} od rodzica {parent_id} (próba {attempts+1}, skala={shift_scale:.2f}).")
+                        # Dodaj dziecko do wykluczeń
+                        exclude_ids.append(child_id)
+                        break
                     else:
-                        logger.warning(f"Znaleziony obraz {result['id']} ma niewłaściwy typ {result['type']}, oczekiwano {'POSITIVE' if is_positive else 'NEGATIVE'}. Próba {attempts+1}, skala={shift_scale:.2f}")
-                        attempts += 1
+                        # Znaleziono obraz z exclude_ids - dostosuj wektor kierunku
+                        ratio = 1 + (distance / np.linalg.norm(current_direction))
+                        current_direction *= ratio
+                        
+                        logger.info(f"Próba {attempts+1}: Znaleziono obraz z exclude_ids")
+                        logger.info(f"  - Odległość: {distance:.2f}")
+                        logger.info(f"  - Ratio: {ratio:.2f}")
+                        logger.info(f"  - Nowa długość wektora: {np.linalg.norm(current_direction):.2f}")
+                        logger.info(f"  - Nowy kierunek wektora: {current_direction[:3]}...")
                 else:
-                    logger.warning(f"Nie znaleziono dziecka dla rodzica {parent_id}. Próba {attempts+1}, skala={shift_scale:.2f}")
-                    attempts += 1
-            
+                    logger.info(f"Próba {attempts+1}: Nie znaleziono żadnego obrazu")
+                    logger.info(f"  - Długość wektora: {np.linalg.norm(current_direction):.2f}")
+                    logger.info(f"  - Kierunek wektora: {current_direction[:3]}...")
+                attempts += 1
+                
             if not found_child:
                 logger.warning(f"Nie udało się wygenerować dziecka dla rodzica {parent_id} po {max_attempts} próbach z różnymi skalami przesunięcia.")
                 # Jeśli nie udało się wygenerować dziecka po wszystkich próbach, użyj losowego obrazu

@@ -2,22 +2,27 @@
 
 import os
 import logging
-import torch
 import numpy as np
-from PIL import Image
-from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple, Union
-from sqlalchemy.orm import Session
+import traceback
+import torch
 import json
 import faiss
 import time
+from typing import Dict, List, Optional, Any, Tuple
 from torchvision import transforms
 from io import BytesIO
 from tqdm import tqdm
+from PIL import Image
+from pathlib import Path
+from sqlalchemy import func
+from sqlalchemy.orm import Session
 
 from ..database import SessionLocal, engine
 from ..models import Image as ImageModel, ImageTypeEnum
 from .. import models
+from ..faiss_manager import get_faiss_index_manager
+
+faiss_manager = get_faiss_index_manager()
 
 # Konfiguracja loggera
 logger = logging.getLogger(__name__)
@@ -378,3 +383,88 @@ def find_nearest_images(image_id: str, embedding: List[float], count: int = 10) 
         {"id": i + 1, "distance": 0.1 * (i + 1)}
         for i in range(count)
     ] 
+
+
+def get_image_embeddings(db: Session, image_ids: List[int]) -> Dict[int, List[float]]:
+    """
+    Pobiera embeddingi dla listy identyfikatorów obrazów.
+    
+    Args:
+        db: Sesja bazy danych
+        image_ids: Lista identyfikatorów obrazów
+        
+    Returns:
+        Słownik {id_obrazu: embedding}
+    """
+    logger.info(f"Pobieranie embeddingów dla {len(image_ids)} obrazów...")
+    
+    # Pobierz obrazy z bazy danych
+    images = db.query(ImageModel).filter(
+        ImageModel.id.in_(image_ids),
+        ImageModel.embedding.isnot(None)
+    ).all()
+    
+    # Utwórz słownik id -> embedding
+    result = {}
+    for image in images:
+        if image.embedding:
+            result[image.id] = image.embedding
+    
+    logger.info(f"Pobrano embeddingi dla {len(result)}/{len(image_ids)} obrazów.")
+    return result
+
+
+def find_nearest_image(db: Session, embedding: List[float]) -> Tuple[Optional[Dict[str, Any]], Optional[float]]:
+    """
+    Znajduje obraz najbliższy do podanego embeddingu.
+    
+    Args:
+        db: Sesja bazy danych
+        embedding: Embedding źródłowy
+        
+    Returns:
+        Krotka zawierająca:
+        - Słownik z informacjami o najbliższym obrazie lub None
+        - Odległość do najbliższego obrazu lub None
+    """
+    try:
+        # Użyj FAISS Managera do znalezienia najbliższego obrazu
+        faiss_manager = get_faiss_index_manager()
+        
+        # Sprawdź typ obrazu (pozytywny/negatywny)
+        image_type = ImageTypeEnum.POSITIVE  # Domyślnie szukamy pozytywnego obrazu
+        
+        # Sprawdź, czy FAISS Manager jest zainicjalizowany
+        if not faiss_manager._initialize():
+            logger.error("Nie udało się zainicjalizować FAISS Managera")
+            return None, None
+            
+        # Pobierz indeks FAISS dla danego typu
+        index, id_to_index, index_to_id = faiss_manager.get_index(image_type)
+        
+        if not index or not id_to_index or not index_to_id:
+            logger.error("Nie udało się uzyskać indeksu FAISS")
+            return None, None
+            
+        # Znajdź najbliższy obraz
+        nearest_id, distance = _find_nearest_image(index, id_to_index, index_to_id, embedding)
+        
+        if nearest_id is None:
+            return None, None
+            
+        # Pobierz informacje o najbliższym obrazie z bazy danych
+        image = db.query(ImageModel).filter(ImageModel.id == nearest_id).first()
+        if not image:
+            logger.error(f"Nie znaleziono obrazu o ID {nearest_id}")
+            return None, None
+            
+        return {
+            "id": image.id,
+            "type": image.type,
+            "embedding": image.embedding
+        }, distance
+        
+    except Exception as e:
+        logger.error(f"Błąd podczas wyszukiwania najbliższego obrazu: {str(e)}")
+        logger.error(traceback.format_exc())
+        return None, None

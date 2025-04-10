@@ -8,11 +8,14 @@ from datetime import timedelta
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 import logging
+import threading
+import traceback
 
 from .database import get_db, engine
 from . import models, schemas, auth
 from .init_db import init_db
 from .routers import sessions_router, rounds_router, images_router, user_router, price_router
+from .faiss_manager import get_faiss_index_manager
 
 # Inicjalizacja loggera
 log_path = os.path.join("logs", "app.log")
@@ -41,6 +44,20 @@ logger.info("Aplikacja uruchomiona")
 
 # Inicjalizacja bazy danych
 init_db()
+
+# Inicjalizacja menedżera indeksów FAISS
+logger.info("Inicjalizacja menedżera indeksów FAISS")
+faiss_manager = get_faiss_index_manager()
+logger.info("Menedżer indeksów FAISS zainicjalizowany")
+
+# Zbuduj indeksy przy starcie aplikacji
+try:
+    logger.info("Rozpoczynam budowę indeksów FAISS")
+    faiss_manager.rebuild_all_indexes()
+    logger.info("Indeksy FAISS zbudowane pomyślnie")
+except Exception as e:
+    logger.error(f"Błąd podczas budowania indeksów FAISS: {str(e)}")
+    logger.error(traceback.format_exc())
 
 # Tworzenie aplikacji FastAPI
 app = FastAPI(title="TachyonAI", version="0.1.0")

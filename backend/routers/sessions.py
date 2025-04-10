@@ -60,40 +60,57 @@ def create_session(
             logger.info(f"Brak jakiejkolwiek sesji dla użytkownika {current_user.id}, tworzenie nowej z losową pulą")
             pos_pool_json, neg_pool_json = get_random_pool(db, 6)
             
-            # Dodatkowe zabezpieczenie przed nieprawidłowymi danymi JSON
-            if not pos_pool_json or not neg_pool_json:
-                logger.warning("Pule obrazów są puste, używam pustych list")
-                pos_pool_json = []
-                neg_pool_json = []
-            
-            new_session = SessionModel(
-                user_id=current_user.id,
-                status="ACTIVE",
-                pos_pool_json=pos_pool_json,
-                neg_pool_json=neg_pool_json,
-                session_profit_factor=1.0,
-                remaining_pairs=6,
-                started_at=datetime.utcnow()
-            )
-            db.add(new_session)
-            db.commit()
-            db.refresh(new_session)
-            
-            # Zwróć informacje o nowej sesji
-            return {
-                "session_exists": True,
-                "session_status": "ACTIVE",
-                "session_id": new_session.id,
-                "has_unfinished_round": False,
-                "unfinished_round_id": None,
-                "session_stats": {
-                    "success_count": 0,
-                    "failure_count": 0,
-                    "success_rate": 0,
-                    "profit_factor": 1.0,
-                    "remaining_pairs": new_session.remaining_pairs
-                }
-            }
+            # Bezpieczne sprawdzenie pól JSON
+            try:
+                if not pos_pool_json or not isinstance(pos_pool_json, list):
+                    raise ValueError("Nieprawidłowy format pos_pool_json")
+                
+                if not neg_pool_json or not isinstance(neg_pool_json, list):
+                    raise ValueError("Nieprawidłowy format neg_pool_json")
+                
+                # Sprawdź, czy obrazy mają wymagane pola
+                for pool_name, pool in [("pozytywna", pos_pool_json), ("negatywna", neg_pool_json)]:
+                    for i, item in enumerate(pool):
+                        if not isinstance(item, dict):
+                            raise ValueError(f"Obraz {i} w {pool_name} puli nie jest słownikiem")
+                        
+                        if "id" not in item:
+                            raise ValueError(f"Obraz {i} w {pool_name} puli nie ma pola 'id'")
+                
+                logger.info(f"Pola JSON dla nowej sesji są prawidłowe")
+                
+                new_session = SessionModel(
+                    user_id=current_user.id,
+                    status="ACTIVE",
+                    pos_pool_json=pos_pool_json,
+                    neg_pool_json=neg_pool_json,
+                    session_profit_factor=1.0,
+                    remaining_pairs=6,
+                    started_at=datetime.utcnow()
+                )
+                db.add(new_session)
+                db.commit()
+                db.refresh(new_session)
+                
+                # Zwróć informacje o nowej sesji
+                return schemas.SessionCreateResponse(
+                    session_exists=True,
+                    session_status="ACTIVE",
+                    session_id=new_session.id,
+                    has_unfinished_round=False,
+                    unfinished_round_id=None,
+                    session_stats={
+                        "success_count": 0,
+                        "failure_count": 0,
+                        "success_rate": 0,
+                        "profit_factor": 1.0,
+                        "remaining_pairs": new_session.remaining_pairs
+                    }
+                )
+                
+            except ValueError as e:
+                logger.error(f"Błąd walidacji pól JSON dla nowej sesji: {str(e)}")
+                raise HTTPException(status_code=500, detail=f"Błąd walidacji danych sesji: {str(e)}")
         
         # 2. Sprawdź czy istnieje aktywna sesja
         active_session = db.query(SessionModel).filter(
@@ -111,26 +128,43 @@ def create_session(
             ).order_by(Round.id.desc()).first()
             
             # Obliczyć statystyki sesji
-            pos_pool_json = active_session.pos_pool_json if isinstance(active_session.pos_pool_json, list) else json.loads(active_session.pos_pool_json)
-            neg_pool_json = active_session.neg_pool_json if isinstance(active_session.neg_pool_json, list) else json.loads(active_session.neg_pool_json)
+            pos_pool_json = active_session.pos_pool_json
+            neg_pool_json = active_session.neg_pool_json
             
-            success_count = sum(item.get("successes", 0) for item in pos_pool_json) + sum(item.get("successes", 0) for item in neg_pool_json)
-            failure_count = sum(item.get("failures", 0) for item in pos_pool_json) + sum(item.get("failures", 0) for item in neg_pool_json)
+            # Zabezpieczenie przed None
+            if pos_pool_json is None:
+                pos_pool_json = []
+            if neg_pool_json is None:
+                neg_pool_json = []
+                
+            logger.info(f"Pobrano aktywną sesję {active_session.id}")
+            logger.info(f"Stan puli pozytywnej: {len(pos_pool_json)} elementów")
+            logger.info(f"Stan puli negatywnej: {len(neg_pool_json)} elementów")
             
-            return {
-                "session_exists": True,
-                "session_status": "ACTIVE",
-                "session_id": active_session.id,
-                "has_unfinished_round": unfinished_round is not None,
-                "unfinished_round_id": unfinished_round.id if unfinished_round else None,
-                "session_stats": {
-                    "success_count": success_count,
-                    "failure_count": failure_count,
-                    "success_rate": success_count / (success_count + failure_count) * 100 if (success_count + failure_count) > 0 else 0,
-                    "profit_factor": active_session.session_profit_factor,
-                    "remaining_pairs": active_session.remaining_pairs
-                }
+            success_count = db.query(Round).filter(
+                Round.session_id == active_session.id, Round.result == "SUCCESS"
+            ).count()
+            
+            failure_count = db.query(Round).filter(
+                Round.session_id == active_session.id, Round.result == "FAILURE"
+            ).count()
+            
+            session_stats = {
+                "success_count": success_count,
+                "failure_count": failure_count,
+                "success_rate": success_count / (success_count + failure_count) * 100 if (success_count + failure_count) > 0 else 0,
+                "profit_factor": active_session.session_profit_factor,
+                "remaining_pairs": active_session.remaining_pairs
             }
+            
+            return schemas.SessionCreateResponse(
+                session_exists=True,
+                session_status="ACTIVE",
+                session_id=active_session.id,
+                has_unfinished_round=unfinished_round is not None,
+                unfinished_round_id=unfinished_round.id if unfinished_round else None,
+                session_stats=session_stats
+            )
             
         # 3. Sprawdź czy istnieje sesja PENDING
         pending_session = db.query(SessionModel).filter(
@@ -141,31 +175,87 @@ def create_session(
         if pending_session:
             logger.info(f"Znaleziono sesję PENDING {pending_session.id} dla użytkownika {current_user.id}, aktywuję ją")
             
-            # Aktywuj sesję PENDING
-            pending_session.status = "ACTIVE"
-            pending_session.started_at = datetime.utcnow()
-            db.commit()
-            db.refresh(pending_session)
-            
-            # Obliczyć statystyki dla nowej puli
-            pos_pool_json = pending_session.pos_pool_json if isinstance(pending_session.pos_pool_json, list) else json.loads(pending_session.pos_pool_json)
-            neg_pool_json = pending_session.neg_pool_json if isinstance(pending_session.neg_pool_json, list) else json.loads(pending_session.neg_pool_json)
-            
-            # Zwróć informacje o aktywowanej sesji
-            return {
-                "session_exists": True,
-                "session_status": "ACTIVE",
-                "session_id": pending_session.id,
-                "has_unfinished_round": False,
-                "unfinished_round_id": None,
-                "session_stats": {
-                    "success_count": 0,
-                    "failure_count": 0,
-                    "success_rate": 0,
-                    "profit_factor": 1.0,
-                    "remaining_pairs": pending_session.remaining_pairs
-                }
-            }
+            # Bezpieczne sprawdzenie pól JSON
+            try:
+                if not pending_session.pos_pool_json or not isinstance(pending_session.pos_pool_json, list):
+                    raise ValueError("Nieprawidłowy format pos_pool_json")
+                
+                if not pending_session.neg_pool_json or not isinstance(pending_session.neg_pool_json, list):
+                    raise ValueError("Nieprawidłowy format neg_pool_json")
+                
+                # Sprawdź, czy obrazy mają wymagane pola
+                for pool_name, pool in [("pozytywna", pending_session.pos_pool_json), ("negatywna", pending_session.neg_pool_json)]:
+                    for i, item in enumerate(pool):
+                        if not isinstance(item, dict):
+                            raise ValueError(f"Obraz {i} w {pool_name} puli nie jest słownikiem")
+                        
+                        if "id" not in item:
+                            raise ValueError(f"Obraz {i} w {pool_name} puli nie ma pola 'id'")
+                
+                logger.info(f"Pola JSON dla sesji PENDING {pending_session.id} są prawidłowe")
+                
+                session = pending_session
+                session.status = "ACTIVE"
+                session.started_at = datetime.utcnow()
+                session.session_profit_factor = 1.0
+                
+                # Sprawdź liczbę par w pulach
+                pos_count = len([item for item in session.pos_pool_json if item.get("failures", 0) == 0])
+                neg_count = len([item for item in session.neg_pool_json if item.get("failures", 0) == 0])
+                
+                if pos_count < 1 or neg_count < 1:
+                    logger.warning(f"Zbyt mało dostępnych par w sesji {session.id}: pozytywnych={pos_count}, negatywnych={neg_count}")
+                    raise ValueError("Zbyt mało dostępnych par w pulach")
+                
+                session.remaining_pairs = min(pos_count, neg_count)
+                
+                db.commit()
+                db.refresh(session)
+                
+                return schemas.SessionCreateResponse(
+                    session_exists=True,
+                    session_status="ACTIVE",
+                    session_id=session.id,
+                    has_unfinished_round=False,
+                    unfinished_round_id=None,
+                    session_stats={
+                        "success_count": 0,
+                        "failure_count": 0,
+                        "success_rate": 0,
+                        "profit_factor": session.session_profit_factor,
+                        "remaining_pairs": session.remaining_pairs
+                    }
+                )
+                
+            except ValueError as e:
+                logger.error(f"Błąd walidacji pól JSON dla sesji PENDING: {str(e)}")
+                # Jeśli pule są nieprawidłowe, generujemy nową pulę
+                logger.info(f"Generowanie nowej puli dla sesji {pending_session.id}")
+                pos_pool_json, neg_pool_json = get_random_pool(db, 6)
+                pending_session.pos_pool_json = pos_pool_json
+                pending_session.neg_pool_json = neg_pool_json
+                pending_session.remaining_pairs = 6
+                
+                pending_session.status = "ACTIVE"
+                pending_session.started_at = datetime.utcnow()
+                pending_session.session_profit_factor = 1.0
+                
+                db.commit()
+                db.refresh(pending_session)
+                return schemas.SessionCreateResponse(
+                    session_exists=True,
+                    session_status="ACTIVE",
+                    session_id=pending_session.id,
+                    has_unfinished_round=False,
+                    unfinished_round_id=None,
+                    session_stats={
+                        "success_count": 0,
+                        "failure_count": 0,
+                        "success_rate": 0,
+                        "profit_factor": pending_session.session_profit_factor,
+                        "remaining_pairs": pending_session.remaining_pairs
+                    }
+                )
         
         # 4. Jeśli nie ma aktywnej ani oczekującej sesji, ale istnieje zakończona, tworzymy nową z pulą generowaną algorytmem
         completed_session = get_last_completed_session(db, current_user.id)
@@ -194,20 +284,20 @@ def create_session(
             db.refresh(new_session)
             
             # Zwróć informacje o nowej sesji
-            return {
-                "session_exists": True,
-                "session_status": "ACTIVE",
-                "session_id": new_session.id,
-                "has_unfinished_round": False,
-                "unfinished_round_id": None,
-                "session_stats": {
+            return schemas.SessionCreateResponse(
+                session_exists=True,
+                session_status="ACTIVE",
+                session_id=new_session.id,
+                has_unfinished_round=False,
+                unfinished_round_id=None,
+                session_stats={
                     "success_count": 0,
                     "failure_count": 0,
                     "success_rate": 0,
                     "profit_factor": 1.0,
                     "remaining_pairs": new_session.remaining_pairs
                 }
-            }
+            )
         
         # Ten przypadek nie powinien nigdy wystąpić, ale dodajemy dla pewności
         logger.error(f"Nieoczekiwany stan: użytkownik {current_user.id} ma sesję, ale nie jest ani aktywna, ani oczekująca, ani zakończona")
@@ -245,21 +335,65 @@ def resume_session(
         
         # Jeśli sesja ma status PENDING, aktywuj ją
         if session.status == "PENDING":
-            session.status = "ACTIVE"
-            session.started_at = datetime.utcnow()
-            session.session_profit_factor = 1.0
+            logger.info(f"Aktywacja sesji PENDING {session.id} dla użytkownika {current_user.id}")
             
-            # Sprawdź czy pule są puste
-            if not session.pos_pool_json or not session.neg_pool_json:
-                logger.info(f"Pule są puste, generuję nową pulę")
+            # Bezpieczne sprawdzenie pól JSON
+            try:
+                if not session.pos_pool_json or not isinstance(session.pos_pool_json, list):
+                    logger.warning(f"Nieprawidłowy format pos_pool_json w sesji {session.id}")
+                    raise ValueError("Nieprawidłowy format pos_pool_json")
+                
+                if not session.neg_pool_json or not isinstance(session.neg_pool_json, list):
+                    logger.warning(f"Nieprawidłowy format neg_pool_json w sesji {session.id}")
+                    raise ValueError("Nieprawidłowy format neg_pool_json")
+                
+                # Sprawdź, czy obrazy mają wymagane pola
+                for pool_name, pool in [("pozytywna", session.pos_pool_json), ("negatywna", session.neg_pool_json)]:
+                    for i, item in enumerate(pool):
+                        if not isinstance(item, dict):
+                            logger.error(f"Obraz {i} w {pool_name} puli nie jest słownikiem: {type(item)}")
+                            raise ValueError(f"Obraz {i} w {pool_name} puli nie jest słownikiem")
+                        
+                        if "id" not in item:
+                            logger.error(f"Obraz {i} w {pool_name} puli nie ma pola 'id'")
+                            raise ValueError(f"Obraz {i} w {pool_name} puli nie ma pola 'id'")
+                
+                logger.info(f"Pola JSON w sesji {session.id} są prawidłowo sformatowane")
+                
+                session.status = "ACTIVE"
+                session.started_at = datetime.utcnow()
+                session.session_profit_factor = 1.0
+                
+                # Sprawdź liczbę par w pulach
+                pos_count = len([item for item in session.pos_pool_json if item.get("failures", 0) == 0])
+                neg_count = len([item for item in session.neg_pool_json if item.get("failures", 0) == 0])
+                
+                if pos_count < 1 or neg_count < 1:
+                    logger.warning(f"Zbyt mało dostępnych par w sesji {session.id}: pozytywnych={pos_count}, negatywnych={neg_count}")
+                    raise ValueError("Zbyt mało dostępnych par w pulach")
+                
+                session.remaining_pairs = min(pos_count, neg_count)
+                
+                db.commit()
+                db.refresh(session)
+                return session
+                
+            except ValueError as e:
+                logger.error(f"Błąd walidacji pól JSON w sesji {session.id}: {str(e)}")
+                # Jeśli pule są nieprawidłowe, generujemy nową pulę
+                logger.info(f"Generowanie nowej puli dla sesji {session.id}")
                 pos_pool_json, neg_pool_json = get_random_pool(db, 6)
                 session.pos_pool_json = pos_pool_json
                 session.neg_pool_json = neg_pool_json
                 session.remaining_pairs = 6
-            
-            db.commit()
-            db.refresh(session)
-            return session
+                
+                session.status = "ACTIVE"
+                session.started_at = datetime.utcnow()
+                session.session_profit_factor = 1.0
+                
+                db.commit()
+                db.refresh(session)
+                return session
         
         # Jeśli sesja ma status COMPLETED, zwróć błąd
         if session.status == "COMPLETED":
@@ -521,209 +655,147 @@ def get_rounds_for_session(
     return rounds
 
 
-@router.get("/sessions/{session_id}/next-pool-stats", response_model=schemas.NextPoolStats)
-def get_next_pool_stats(
+@router.get("/sessions/{session_id}/pool-info", response_model=dict)
+def get_pool_info(
     session_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
-    """Pobiera statystyki puli dla następnej sesji, która może być w trakcie generowania."""
+    """
+    Sprawdza status sesji i zwraca informacje o sesji PENDING oraz statystyki puli.
+    """
     try:
-        logger.info(f"Pobieranie statystyk puli dla następnej sesji, na podstawie sesji {session_id}")
-        
-        # Sprawdź, czy sesja istnieje i należy do bieżącego użytkownika
-        session = db.query(SessionModel).filter(
-            SessionModel.id == session_id,
-            SessionModel.user_id == current_user.id
-        ).first()
-        if not session:
-            raise HTTPException(status_code=404, detail="Sesja nie znaleziona lub brak dostępu")
-            
-        # Sprawdź czy istnieje już wygenerowana ale nieużyta sesja dla użytkownika
-        next_session = db.query(SessionModel).filter(
+        # Sprawdź czy istnieje sesja PENDING
+        pending_session = db.query(SessionModel).filter(
             SessionModel.user_id == current_user.id,
             SessionModel.status == "PENDING"
         ).order_by(SessionModel.id.desc()).first()
         
-        # Jeśli nie ma jeszcze wygenerowanej sesji PENDING, zwracamy informację, że pula nie jest jeszcze gotowa
-        if not next_session:
-            logger.info(f"Brak sesji PENDING, nie można wygenerować puli dla sesji {session_id}")
+        if pending_session:
+            logger.info(f"Znaleziono sesję PENDING {pending_session.id} dla użytkownika {current_user.id}")
             
-            # W tym przypadku zwracamy informację, że pula nie jest jeszcze gotowa
+            # Sprawdź, czy sesja ma wygenerowane pule
+            has_generated_pools = False
+            pool_stats = None
+            
+            if pending_session.pos_pool_json and pending_session.neg_pool_json:
+                try:
+                    # Bezpieczne sprawdzenie pól JSON
+                    if isinstance(pending_session.pos_pool_json, list) and isinstance(pending_session.neg_pool_json, list):
+                        has_generated_pools = True
+                        logger.info(f"Sesja {pending_session.id} ma wygenerowane pule")
+                        
+                        # Oblicz statystyki puli
+                        pool_stats = {
+                            "pos_pool": {
+                                "total": len(pending_session.pos_pool_json),
+                                "bought": sum(1 for item in pending_session.pos_pool_json if item.get("origin", "random") == "bought"),
+                                "children": sum(1 for item in pending_session.pos_pool_json if item.get("origin", "").startswith("child_of_")),
+                                "random": sum(1 for item in pending_session.pos_pool_json if item.get("origin", "random") == "random"),
+                                "random_fallback": sum(1 for item in pending_session.pos_pool_json if item.get("origin", "").startswith("random_fallback_for_")),
+                                "images": [{
+                                    "id": item["id"],
+                                    "origin": item.get("origin", "random"),
+                                    "successes": item.get("successes", 0),
+                                    "failures": item.get("failures", 0)
+                                } for item in pending_session.pos_pool_json]
+                            },
+                            "neg_pool": {
+                                "total": len(pending_session.neg_pool_json),
+                                "bought": sum(1 for item in pending_session.neg_pool_json if item.get("origin", "random") == "bought"),
+                                "children": sum(1 for item in pending_session.neg_pool_json if item.get("origin", "").startswith("child_of_")),
+                                "random": sum(1 for item in pending_session.neg_pool_json if item.get("origin", "random") == "random"),
+                                "random_fallback": sum(1 for item in pending_session.neg_pool_json if item.get("origin", "").startswith("random_fallback_for_")),
+                                "images": [{
+                                    "id": item["id"],
+                                    "origin": item.get("origin", "random"),
+                                    "successes": item.get("successes", 0),
+                                    "failures": item.get("failures", 0)
+                                } for item in pending_session.neg_pool_json]
+                            },
+                            "total_images": len(pending_session.pos_pool_json) + len(pending_session.neg_pool_json)
+                        }
+                except Exception as e:
+                    logger.error(f"Błąd podczas sprawdzania pól JSON: {str(e)}")
+                    has_generated_pools = False
+            
             return {
-                "is_ready": False,
-                "session_id": None,
-                "total_count": 0,
-                "random_count": 0,
-                "bought_count": 0,
-                "child_count": 0,
-                "pos_total": 0,
-                "pos_random": 0,
-                "pos_bought": 0,
-                "pos_child": 0,
-                "neg_total": 0,
-                "neg_random": 0,
-                "neg_bought": 0,
-                "neg_child": 0,
-                "message": "Brak gotowej puli, należy utworzyć nową sesję"
+                "has_pending_session": True,
+                "pending_session_id": pending_session.id,
+                "has_generated_pools": has_generated_pools,
+                "pool_stats": pool_stats
             }
-        
-        # Przygotowanie zmiennych na wypadek błędu
-        pos_pool = []
-        neg_pool = []
-        
-        # Bezpieczne parsowanie JSON puli pozytywnych
-        try:
-            if isinstance(next_session.pos_pool_json, str):
-                pos_pool = json.loads(next_session.pos_pool_json)
-            else:
-                pos_pool = next_session.pos_pool_json if next_session.pos_pool_json is not None else []
-            logger.info(f"Pomyślnie sparsowano JSON pozytywnej puli: {len(pos_pool)} elementów")
-        except json.JSONDecodeError as e:
-            logger.error(f"Błąd parsowania JSON dla pozytywnej puli w sesji {next_session.id}: {str(e)}")
-        except Exception as e:
-            logger.error(f"Nieoczekiwany błąd podczas parsowania JSON pozytywnej puli: {str(e)}")
-        
-        # Bezpieczne parsowanie JSON puli negatywnych
-        try:
-            if isinstance(next_session.neg_pool_json, str):
-                neg_pool = json.loads(next_session.neg_pool_json)
-            else:
-                neg_pool = next_session.neg_pool_json if next_session.neg_pool_json is not None else []
-            logger.info(f"Pomyślnie sparsowano JSON negatywnej puli: {len(neg_pool)} elementów")
-        except json.JSONDecodeError as e:
-            logger.error(f"Błąd parsowania JSON dla negatywnej puli w sesji {next_session.id}: {str(e)}")
-        except Exception as e:
-            logger.error(f"Nieoczekiwany błąd podczas parsowania JSON negatywnej puli: {str(e)}")
-    
-        # Inicjalizacja słowników dla statystyk
-        origins = {"random": 0, "bought": 0, "child": 0}
-        pos_origins = {"random": 0, "bought": 0, "child": 0}
-        neg_origins = {"random": 0, "bought": 0, "child": 0}
-        
-        # Oblicz statystyki pozytywnych bodźców
-        for item in pos_pool:
-            try:
-                # Sprawdźmy, czy item jest słownikiem czy listą
-                if isinstance(item, dict):
-                    origin = item.get("origin", "random")  # Domyślnie "random" jeśli pole nie istnieje
-                    
-                    # Sprawdź, czy origin zaczyna się od "child_of_" - jeśli tak, to jest to dziecko
-                    if origin.startswith("child_of_"):
-                        pos_origins["child"] += 1
-                    elif origin.startswith("random_fallback_for_"):
-                        pos_origins["random"] += 1
-                    elif origin in pos_origins:
-                        pos_origins[origin] += 1
-                    else:
-                        # Jeśli origin nie pasuje do żadnej kategorii, traktujemy jako random
-                        pos_origins["random"] += 1
-                else:
-                    # Jeśli item nie jest słownikiem, traktujemy go jako dane bez origin (domyślnie random)
-                    pos_origins["random"] += 1
-            except Exception as e:
-                logger.error(f"Błąd podczas analizy pozytywnego bodźca: {str(e)}, item={item}")
-                
-        # Oblicz statystyki negatywnych bodźców
-        for item in neg_pool:
-            try:
-                # Sprawdźmy, czy item jest słownikiem czy listą
-                if isinstance(item, dict):
-                    origin = item.get("origin", "random")  # Domyślnie "random" jeśli pole nie istnieje
-                    
-                    # Sprawdź, czy origin zaczyna się od "child_of_" - jeśli tak, to jest to dziecko
-                    if origin.startswith("child_of_"):
-                        neg_origins["child"] += 1
-                    elif origin.startswith("random_fallback_for_"):
-                        neg_origins["random"] += 1
-                    elif origin in neg_origins:
-                        neg_origins[origin] += 1
-                    else:
-                        # Jeśli origin nie pasuje do żadnej kategorii, traktujemy jako random
-                        neg_origins["random"] += 1
-                else:
-                    # Jeśli item nie jest słownikiem, traktujemy go jako dane bez origin (domyślnie random)
-                    neg_origins["random"] += 1
-            except Exception as e:
-                logger.error(f"Błąd podczas analizy negatywnego bodźca: {str(e)}, item={item}")
-        
-        # Sumy ogólne
-        for key in origins:
-            origins[key] = pos_origins[key] + neg_origins[key]
-                
-        total_count = len(pos_pool) + len(neg_pool)
-                
-        return {
-            "is_ready": True,
-            "session_id": next_session.id,
-            "total_count": total_count,
-            "random_count": origins["random"],
-            "bought_count": origins["bought"],
-            "child_count": origins["child"],
-            "pos_total": len(pos_pool),
-            "pos_random": pos_origins["random"],
-            "pos_bought": pos_origins["bought"],
-            "pos_child": pos_origins["child"],
-            "neg_total": len(neg_pool),
-            "neg_random": neg_origins["random"],
-            "neg_bought": neg_origins["bought"],
-            "neg_child": neg_origins["child"],
-            "message": "Pula gotowa do użycia"
-        }
-    except HTTPException:
-        raise
+        else:
+            return {
+                "has_pending_session": False,
+                "pending_session_id": None,
+                "has_generated_pools": False,
+                "pool_stats": None
+            }
+            
     except Exception as e:
-        logger.error(f"Błąd podczas pobierania statystyk puli: {str(e)}")
-        logger.error(traceback.format_exc())
+        logger.error(f"Błąd podczas sprawdzania statusu puli: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/sessions/generate-pending", response_model=schemas.Session)
+@router.post("/sessions/generate-pending", response_model=schemas.Message)
 def generate_pending_session(
     request: schemas.GenerateNewPoolRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
-    Rozpoczyna generowanie nowej puli dla użytkownika na podstawie poprzedniej sesji
-    i tworzy nową sesję w statusie PENDING.
+    Generuje nową sesję w stanie PENDING na podstawie poprzedniej sesji.
     """
     try:
         logger.info(f"Rozpoczynam generowanie nowej puli dla użytkownika {current_user.id}")
         
-        # Pobieramy poprzednią sesję (jeśli podano jej ID)
-        previous_session = None
-        if request.previous_session_id:
-            previous_session = db.query(SessionModel).filter(
-                SessionModel.id == request.previous_session_id,
-                SessionModel.user_id == current_user.id
-            ).first()
-            
-            if not previous_session:
-                logger.warning(f"Nie znaleziono sesji {request.previous_session_id} dla użytkownika {current_user.id}")
-                raise HTTPException(status_code=404, detail="Poprzednia sesja nie znaleziona")
-        else:
-            # Jeśli nie podano ID, szukamy ostatniej zakończonej sesji
-            previous_session = get_last_completed_session(db, current_user.id)
+        # Pobierz poprzednią sesję
+        previous_session = db.query(SessionModel).filter(
+            SessionModel.id == request.previous_session_id,
+            SessionModel.user_id == current_user.id
+        ).first()
         
-        # Jeśli brak poprzedniej sesji, zwracamy błąd
         if not previous_session:
-            logger.warning(f"Brak poprzedniej sesji dla użytkownika {current_user.id}")
-            raise HTTPException(status_code=404, detail="Brak poprzedniej sesji")
+            raise HTTPException(status_code=404, detail="Poprzednia sesja nie znaleziona")
         
-        # Generujemy nowe pule na podstawie poprzedniej sesji
-        pos_pool_json, neg_pool_json = generate_pool_with_genetic_algorithm(previous_session, db)
+        # Sprawdź czy poprzednia sesja jest zakończona
+        if previous_session.status != "COMPLETED":
+            raise HTTPException(status_code=400, detail="Poprzednia sesja nie jest zakończona")
+
+        # Parsuj JSON puli obrazów
+        try:
+            pos_pool_json = previous_session.pos_pool_json
+            neg_pool_json = previous_session.neg_pool_json
+            
+            logger.info(f"Pomyślnie sparsowano JSON pozytywnej puli: {len(pos_pool_json)} elementów")
+            logger.info(f"Pomyślnie sparsowano JSON negatywnej puli: {len(neg_pool_json)} elementów")
+        except Exception as e:
+            logger.error(f"Błąd parsowania JSON puli: {str(e)}")
+            raise HTTPException(status_code=500, detail="Błąd parsowania JSON puli")
         
-        # Tworzymy nową sesję PENDING z wygenerowaną pulą
+        # Generuj nową pulę na podstawie poprzedniej sesji
+        try:
+            # Generuj nową pulę
+            logger.info(f"Rozpoczynam generowanie nowej puli na podstawie sesji {previous_session.id}")
+            
+            # Wywołaj funkcję process_pool_generation z modułu genetic_pool
+            new_pos_pool, new_neg_pool = generate_pool_with_genetic_algorithm(previous_session, db)
+            
+            logger.info(f"Wygenerowano nową pulę: {len(new_pos_pool)} pozytywnych, {len(new_neg_pool)} negatywnych")
+        except Exception as e:
+            logger.error(f"Błąd generowania nowej puli: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise HTTPException(status_code=500, detail="Błąd generowania nowej puli")
+        
+        # Utwórz nową sesję w stanie PENDING
         new_session = SessionModel(
             user_id=current_user.id,
             status="PENDING",
-            pos_pool_json=pos_pool_json,
-            neg_pool_json=neg_pool_json,
+            pos_pool_json=new_pos_pool,
+            neg_pool_json=new_neg_pool,
             session_profit_factor=1.0,
-            remaining_pairs=6,
-            started_at=None  # Zostanie ustawione przy aktywacji
+            remaining_pairs=6  # Stała liczba par, zgodnie z resztą kodu
         )
         
         db.add(new_session)
@@ -732,19 +804,15 @@ def generate_pending_session(
         
         logger.info(f"Utworzono nową sesję PENDING (id={new_session.id}) dla użytkownika {current_user.id}")
         
-        return {
-            "status": "success", 
-            "message": "Nowa pula wygenerowana", 
-            "session_id": new_session.id
-        }
+        return {"message": "Utworzono nową sesję PENDING"}
         
-    except HTTPException:
-        raise
+    except HTTPException as e:
+        # Przekaż wyjątek HTTPException dalej
+        raise e
     except Exception as e:
-        logger.error(f"Błąd podczas generowania nowej puli: {str(e)}")
+        logger.error(f"Błąd podczas generowania sesji PENDING: {str(e)}")
         logger.error(traceback.format_exc())
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Błąd serwera: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/sessions/{session_id}/trigger-pool-generation", response_model=schemas.Message)
@@ -764,16 +832,15 @@ def trigger_pool_generation(
         if not session:
             raise HTTPException(status_code=404, detail="Sesja nie znaleziona")
         
-        # Usuń istniejącą sesję PENDING, jeśli istnieje
+        # Sprawdź czy istnieje sesja PENDING
         existing_pending = db.query(SessionModel).filter(
             SessionModel.user_id == current_user.id,
             SessionModel.status == "PENDING"
         ).first()
         
         if existing_pending:
-            logger.info(f"Usuwam istniejącą sesję PENDING (id={existing_pending.id}) dla użytkownika {current_user.id}")
-            db.delete(existing_pending)
-            db.commit()
+            logger.info(f"Istnieje już sesja PENDING (id={existing_pending.id}) dla użytkownika {current_user.id}")
+            return {"message": f"Istnieje już sesja PENDING (id={existing_pending.id})"}
         
         # Wykorzystaj istniejącą funkcję generate_pending_session
         # Przygotuj obiekt request zgodny z oczekiwanym przez generate_pending_session
@@ -789,68 +856,3 @@ def trigger_pool_generation(
         logger.error(f"Błąd podczas triggerowania generowania puli: {str(e)}")
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/sessions/{session_id}/pool-status", response_model=dict)
-def get_pool_status(
-    session_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """
-    Sprawdza status sesji i zwraca informacje o następnej sesji (jeśli istnieje).
-    """
-    try:
-        # Znajdź aktualną sesję
-        current_session = db.query(SessionModel).filter(
-            SessionModel.id == session_id,
-            SessionModel.user_id == current_user.id
-        ).first()
-        if not current_session:
-            raise HTTPException(status_code=404, detail="Nie znaleziono sesji")
-            
-        # Sprawdź czy istnieje następna sesja
-        next_session = db.query(SessionModel).filter(
-            SessionModel.user_id == current_user.id,
-            SessionModel.id > session_id
-        ).order_by(SessionModel.id.asc()).first()
-        
-        if next_session:
-            # Przeanalizuj pule następnej sesji
-            pos_pool = json.loads(next_session.pos_pool_json)
-            neg_pool = json.loads(next_session.neg_pool_json)
-            
-            # Policz statystyki
-            pos_stats = {
-                "total": len(pos_pool),
-                "bought": sum(1 for item in pos_pool if item["origin"] == "bought"),
-                "children": sum(1 for item in pos_pool if item["origin"] == "child"),
-                "random": sum(1 for item in pos_pool if item["origin"] == "random")
-            }
-            
-            neg_stats = {
-                "total": len(neg_pool),
-                "bought": sum(1 for item in neg_pool if item["origin"] == "bought"),
-                "children": sum(1 for item in neg_pool if item["origin"] == "child"),
-                "random": sum(1 for item in neg_pool if item["origin"] == "random")
-            }
-            
-            return {
-                "has_next_session": True,
-                "next_session_id": next_session.id,
-                "next_session_status": next_session.status,
-                "pos_pool": pos_stats,
-                "neg_pool": neg_stats
-            }
-        else:
-            return {
-                "has_next_session": False,
-                "next_session_id": None,
-                "next_session_status": None,
-                "pos_pool": None,
-                "neg_pool": None
-            }
-            
-    except Exception as e:
-        logger.error(f"Błąd podczas sprawdzania statusu puli: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e)) 

@@ -193,7 +193,7 @@
             <div class="summary-section">
                 <button id="show-details-button" class="button secondary-button">Szczegółowy przebieg rund</button>
                 <div id="rounds-details" class="details-container" style="display: none;">
-                    <table class="details-table" style="width: 100%;">
+                    <table id="rounds-table" class="details-table" style="width: 100%;">
                         <thead>
                             <tr>
                                 <th>Nr</th>
@@ -205,16 +205,21 @@
                                 <th>Wynik</th>
                             </tr>
                         </thead>
-                        <tbody id="rounds-details-body">
-                            <!-- Tutaj będą dodawane wiersze z detalami rund -->
-                        </tbody>
+                        <tbody id="rounds-table-body"></tbody>
                     </table>
                 </div>
             </div>
-            
+
+            <!-- Sekcja przycisku "Nowa sesja" -->
             <div class="summary-actions">
                 <button id="new-session-button" class="button primary-button">Nowa sesja</button>
             </div>
+
+            <!-- Sekcja statystyk puli -->
+            <div id="summary-content" class="summary-section">
+                <!-- Tu zostaną dodane statystyki puli -->
+            </div>
+
         </div>
     </main>
 
@@ -226,4 +231,4 @@
     <script src="{{ url_for('static', path='/js/auth.js') }}"></script>
     <script src="{{ url_for('static', path='/js/summary.js') }}"></script>
 </body>
-</html> 
+</html>

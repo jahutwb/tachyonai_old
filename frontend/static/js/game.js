@@ -24,7 +24,7 @@ const GameStates = {
 // Konfiguracja
 const CONFIG = {
   API_TIMEOUT: 10000, // 10 sekund timeout dla standardowych zapytań API
-  SESSION_API_TIMEOUT: 60000, // 60 sekund timeout dla operacji związanych z sesjami
+  SESSION_API_TIMEOUT: 180000, // 180 sekund timeout dla operacji związanych z sesjami
   PRICE_REFRESH_INTERVAL: 1000, // Interwał odświeżania ceny (ms)
   RESULT_DISPLAY_TIME: 2000, // Czas wyświetlania wyniku (ms)
   DEBUG: true // Włącza zaawansowane logowanie
@@ -257,7 +257,7 @@ class ApiService {
    */
   async createSession() {
     try {
-      return await this.fetchWithAuth('/api/sessions/new', {
+      return await this.fetchWithAuth('/api/sessions', {
         method: 'POST',
         timeout: CONFIG.SESSION_API_TIMEOUT
       });
@@ -304,18 +304,27 @@ class UIController {
    * Przygotowuje interfejs do wyświetlenia fazy wyboru
    */
   static prepareChoicePhase() {
+    console.log('[Debug] Przygotowywanie fazy wyboru...');
     this.showPhase(DOM.PHASE_SELECT);
     
     // Reset stanu kurtyn
     const leftCurtain = document.querySelector(DOM.LEFT_CURTAIN);
     const rightCurtain = document.querySelector(DOM.RIGHT_CURTAIN);
     
+    console.log('[Debug] Elementy kurtyn:', { leftCurtain, rightCurtain });
+    
     if (leftCurtain) {
       leftCurtain.classList.remove('curtain-expanded', 'curtain-hidden');
+      leftCurtain.style.display = 'flex'; // Upewnij się, że kurtyna jest widoczna
+    } else {
+      console.error('[Debug] Nie znaleziono elementu lewej kurtyny!');
     }
     
     if (rightCurtain) {
       rightCurtain.classList.remove('curtain-expanded', 'curtain-hidden');
+      rightCurtain.style.display = 'flex'; // Upewnij się, że kurtyna jest widoczna
+    } else {
+      console.error('[Debug] Nie znaleziono elementu prawej kurtyny!');
     }
     
     // Ukryj teksty akcji
@@ -324,6 +333,17 @@ class UIController {
     
     if (leftAction) leftAction.style.display = 'none';
     if (rightAction) rightAction.style.display = 'none';
+    
+    // Upewnij się, że kontener gry jest widoczny
+    const gameContainer = document.querySelector(DOM.PHASE_SELECT);
+    if (gameContainer) {
+      gameContainer.style.display = 'block';
+      console.log('[Debug] Kontener gry ustawiony jako widoczny');
+    } else {
+      console.error('[Debug] Nie znaleziono kontenera gry!');
+    }
+    
+    console.log('[Debug] Faza wyboru przygotowana');
   }
   
   /**
@@ -469,12 +489,16 @@ class UIController {
    * Wyświetla dialog wyboru sesji
    */
   static showSessionDialog(sessionData) {
-    const dialog = document.createElement('div');
-    dialog.className = 'dialog-overlay';
+    // Tworzymy warstwę overlay
+    const overlay = document.createElement('div');
+    overlay.className = 'dialog-overlay';
+    
+    // Tworzymy kontener dla dialogu
+    const dialogContainer = document.createElement('div');
+    dialogContainer.className = 'dialog-container';
     
     let dialogContent = `
-      <div class="dialog-container">
-        <h2>Wybór sesji</h2>
+      <h2>Wybór sesji</h2>
     `;
     
     if (sessionData.session_status === 'ACTIVE') {
@@ -502,8 +526,9 @@ class UIController {
       
     } else if (sessionData.session_status === 'PENDING') {
       // Oczekująca sesja (wygenerowana pula)
-      const posOrigins = sessionData.pool_origin_stats.positive;
-      const negOrigins = sessionData.pool_origin_stats.negative;
+      const poolStats = sessionData.new_pool_stats || sessionData.pool_origin_stats || { pos_origins: {}, neg_origins: {} };
+      const posOrigins = poolStats.positive || poolStats.pos_origins || {};
+      const negOrigins = poolStats.negative || poolStats.neg_origins || {};
       
       dialogContent += `
         <div class="session-stats">
@@ -589,22 +614,47 @@ class UIController {
       `;
     }
     
-    dialogContent += `</div></div>`;
-    dialog.innerHTML = dialogContent;
+    dialogContent += `</div>`;
     
-    // Dodanie dialoga do DOM
-    document.body.appendChild(dialog);
+    // Ustawiamy treść dialogu
+    dialogContainer.innerHTML = dialogContent;
     
-    // Zwrócenie referencji do dialogu
-    return dialog;
+    // Dodajemy kontener do overlaya
+    overlay.appendChild(dialogContainer);
+    
+    // Dodajemy overlay do DOM
+    document.body.appendChild(overlay);
+    
+    // Zwracamy obiekt z overlayem i kontenerem dla łatwiejszego zarządzania
+    return {
+      overlay: overlay,
+      container: dialogContainer,
+      buttons: {
+        activate: overlay.querySelector('#activate-session-btn'),
+        new: overlay.querySelector('#new-session-btn'),
+        resume: overlay.querySelector('#resume-session-btn'),
+        check: overlay.querySelector('#check-status-btn')
+      }
+    };
   }
   
   /**
    * Usuwa dialog wyboru sesji
    */
   static removeSessionDialog(dialog) {
-    if (dialog && dialog.overlay) {
+    if (!dialog) return;
+    
+    // Dialog może być bezpośrednim elementem DOM lub obiektem z właściwością overlay
+    if (dialog.overlay) {
       document.body.removeChild(dialog.overlay);
+    } else if (dialog.parentNode) {
+      dialog.parentNode.removeChild(dialog);
+    } else if (typeof dialog === 'object' && dialog instanceof Element) {
+      if (document.body.contains(dialog)) {
+        document.body.removeChild(dialog);
+      }
+    } else {
+      console.error('Nie można usunąć dialogu:', dialog);
     }
   }
   
@@ -875,12 +925,24 @@ class GameController {
     const leftCurtain = document.querySelector(DOM.LEFT_CURTAIN);
     const rightCurtain = document.querySelector(DOM.RIGHT_CURTAIN);
     
+    console.log('[Debug] Przypisywanie zdarzeń kliknięcia do kurtyn:', { leftCurtain, rightCurtain });
+    
     if (leftCurtain) {
+      // Usuwamy stare listeners, aby uniknąć duplikacji
+      leftCurtain.removeEventListener('click', () => this.handleCurtainClick('LEFT'));
       leftCurtain.addEventListener('click', () => this.handleCurtainClick('LEFT'));
+      console.log('[Debug] Zdarzenie kliknięcia przypisane do lewej kurtyny');
+    } else {
+      console.error('[Debug] Nie można znaleźć lewej kurtyny do przypisania zdarzenia!');
     }
     
     if (rightCurtain) {
+      // Usuwamy stare listeners, aby uniknąć duplikacji
+      rightCurtain.removeEventListener('click', () => this.handleCurtainClick('RIGHT'));
       rightCurtain.addEventListener('click', () => this.handleCurtainClick('RIGHT'));
+      console.log('[Debug] Zdarzenie kliknięcia przypisane do prawej kurtyny');
+    } else {
+      console.error('[Debug] Nie można znaleźć prawej kurtyny do przypisania zdarzenia!');
     }
     
     // Przycisk następnej rundy
@@ -947,13 +1009,16 @@ class GameController {
   /**
    * Obsługuje kliknięcie przycisku podsumowania
    */
-  handleSummaryClick() {
+  async handleSummaryClick() {
     if (this.state !== GameStates.SHOWING_RESULT && this.state !== GameStates.SESSION_COMPLETED) {
       return;
     }
     
-    // Przekieruj do strony podsumowania
-    window.location.href = `/summary?session_id=${this.data.sessionId}`;
+    // Pobierz ID sesji
+    const sessionId = this.data.sessionId;
+    
+    // Najpierw przekieruj do podsumowania
+    window.location.href = `/summary?session_id=${sessionId}`;
   }
   
   /**
@@ -1070,6 +1135,31 @@ class GameController {
               throw error;
             }
           }
+        } else if (sessionData.session_status === 'PENDING') {
+          // Wykryto sesję PENDING - automatyczne aktywowanie bez dialogu
+          UIController.updateLoadingMessage('Aktywowanie oczekującej sesji...');
+          try {
+            console.log(`Automatyczne aktywowanie sesji PENDING ${sessionData.session_id}...`);
+            const activatedSession = await this.apiService.resumeSession(sessionData.session_id);
+            console.log('Sesja aktywowana:', activatedSession);
+            
+            this.data.sessionId = sessionData.session_id;
+            await this.setupSessionData(activatedSession);
+            
+            // Jawnie ładujemy pierwszą rundę dla aktywowanej sesji
+            try {
+              await this.loadNewRound();
+            } catch (roundError) {
+              Logger.error('Błąd podczas ładowania pierwszej rundy', roundError);
+              UIController.updateLoadingMessage(`Błąd: ${roundError.message || 'Nie udało się załadować rundy'}`);
+              alert(`Sesja została aktywowana, ale wystąpił błąd podczas ładowania pierwszej rundy: ${roundError.message}`);
+            }
+          } catch (error) {
+            Logger.error('Błąd podczas automatycznego aktywowania sesji PENDING', error);
+            UIController.updateLoadingMessage(`Błąd: ${error.message || 'Nie udało się aktywować sesji'}`);
+            // Wyświetl dodatkowy komunikat
+            alert(`Nie udało się aktywować sesji: ${error.message}. Spróbuj ponownie.`);
+          }
         } else {
           // Inne statusy - pokaż dialog wyboru
           const dialog = UIController.showSessionDialog(sessionData);
@@ -1081,13 +1171,32 @@ class GameController {
             document.querySelector('#activate-session-btn').addEventListener('click', async () => {
               UIController.showLoadingOverlay('Aktywowanie sesji...');
               try {
+                console.log(`Aktywowanie sesji ${sessionData.session_id}...`);
+                const token = localStorage.getItem('token');
+                console.log(`Token autoryzacji: ${token ? 'dostępny' : 'brak'}`);
+                
                 const activatedSession = await this.apiService.resumeSession(sessionData.session_id);
+                console.log('Sesja aktywowana:', activatedSession);
+                
                 this.data.sessionId = sessionData.session_id;
                 await this.setupSessionData(activatedSession);
+                
+                // Upewniamy się, że dialog jest usunięty przed załadowaniem nowej rundy
                 UIController.removeSessionDialog(dialog);
+                
+                // Jawnie ładujemy pierwszą rundę dla aktywowanej sesji
+                try {
+                  await this.loadNewRound();
+                } catch (roundError) {
+                  Logger.error('Błąd podczas ładowania pierwszej rundy', roundError);
+                  UIController.updateLoadingMessage(`Błąd: ${roundError.message || 'Nie udało się załadować rundy'}`);
+                  alert(`Sesja została aktywowana, ale wystąpił błąd podczas ładowania pierwszej rundy: ${roundError.message}`);
+                }
               } catch (error) {
                 Logger.error('Błąd podczas aktywowania sesji', error);
                 UIController.updateLoadingMessage(`Błąd: ${error.message || 'Nie udało się aktywować sesji'}`);
+                // Wyświetl dodatkowy komunikat
+                alert(`Nie udało się aktywować sesji: ${error.message}. Spróbuj ponownie.`);
               }
             });
             

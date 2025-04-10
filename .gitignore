@@ -4,6 +4,9 @@
 *.sqlite
 *.sqlite3
 
+# Cache
+/cache/
+
 # Środowisko Python
 venv/
 __pycache__/
@@ -45,4 +48,4 @@ var/
 
 # Pliki systemowe
 .DS_Store
-Thumbs.db 
+Thumbs.db

@@ -36,8 +36,24 @@ def get_next_round(
         logger.info(f"Stan sesji {session_id} po pobraniu z bazy:")
         logger.info(f"Status: {session.status}")
         logger.info(f"Remaining pairs: {session.remaining_pairs}")
-        logger.info(f"Pos pool: {[(item['id'], item.get('failures', 0), item.get('successes', 0)) for item in session.pos_pool_json]}")
-        logger.info(f"Neg pool: {[(item['id'], item.get('failures', 0), item.get('successes', 0)) for item in session.neg_pool_json]}")
+        
+        try:
+            # Bezpośrednie użycie pól JSON z modelu
+            pos_pool_json = session.pos_pool_json
+            neg_pool_json = session.neg_pool_json
+            
+            # Zabezpieczenie przed None
+            if pos_pool_json is None:
+                pos_pool_json = []
+            if neg_pool_json is None:
+                neg_pool_json = []
+                
+            logger.info(f"Pos pool: {[item['id'] for item in pos_pool_json]}")
+            logger.info(f"Neg pool: {[item['id'] for item in neg_pool_json]}")
+        except Exception as json_error:
+            logger.error(f"Błąd przetwarzania JSON: {str(json_error)}")
+            pos_pool_json = []
+            neg_pool_json = []
 
         if session.user_id != current_user.id:
             logger.warning(f"Brak dostępu do sesji {session_id} dla użytkownika {current_user.id}")
@@ -60,27 +76,12 @@ def get_next_round(
         
         try:
             # Filtruj pule obrazów - tylko failures=0
-            try:
-                # Bezpieczne przetwarzanie JSON
-                pos_pool_json = json.loads(session.pos_pool_json) if isinstance(session.pos_pool_json, str) else session.pos_pool_json
-                neg_pool_json = json.loads(session.neg_pool_json) if isinstance(session.neg_pool_json, str) else session.neg_pool_json
-                
-                # Zabezpieczenie przed None
-                if pos_pool_json is None:
-                    pos_pool_json = []
-                if neg_pool_json is None:
-                    neg_pool_json = []
-                    
-                valid_pos_pool = [item for item in pos_pool_json if item.get("failures", 0) == 0]
-                valid_neg_pool = [item for item in neg_pool_json if item.get("failures", 0) == 0]
-            except Exception as json_error:
-                logger.error(f"Błąd przetwarzania JSON: {str(json_error)}")
-                valid_pos_pool = []
-                valid_neg_pool = []
-
+            valid_pos_pool = [item for item in pos_pool_json if item.get("failures", 0) == 0]
+            valid_neg_pool = [item for item in neg_pool_json if item.get("failures", 0) == 0]
+            
             logger.info(f"Stan pul po filtrowaniu (tylko failures=0):")
-            logger.info(f"Pozytywne: {[(item['id'], item.get('failures', 0)) for item in valid_pos_pool]}")
-            logger.info(f"Negatywne: {[(item['id'], item.get('failures', 0)) for item in valid_neg_pool]}")
+            logger.info(f"Pozytywne: {[item['id'] for item in valid_pos_pool]}")
+            logger.info(f"Negatywne: {[item['id'] for item in valid_neg_pool]}")
 
             # Sprawdź, czy są dostępne pary obrazów
             if not valid_pos_pool or not valid_neg_pool:
