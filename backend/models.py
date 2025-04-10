@@ -83,7 +83,7 @@ class Session(Base):
     neg_pool_json = Column(JSON, nullable=True)
     session_profit_factor = Column(Float, default=1.0)
     remaining_pairs = Column(Integer, default=6)
-    started_at = Column(DateTime, default=func.now())
+    started_at = Column(DateTime, nullable=True)
     ended_at = Column(DateTime, nullable=True)
 
     user = relationship("User", back_populates="sessions")

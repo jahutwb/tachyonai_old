@@ -26,17 +26,19 @@ logger = logging.getLogger(__name__)
 class PoolImageItem:
     """Reprezentuje obraz w puli genetycznej."""
     
-    def __init__(self, image_id: int, origin: str = "random", successes: int = 0):
+    def __init__(self, image_id: int, origin: str = "random", successes: int = 0, failures: int = 0):
         self.id = image_id
         self.origin = origin
         self.successes = successes
+        self.failures = failures
     
     def to_dict(self) -> Dict[str, Any]:
         """Konwertuje obiekt na słownik."""
         return {
             "id": self.id,
             "origin": self.origin,
-            "successes": self.successes
+            "successes": self.successes,
+            "failures": self.failures
         }
     
     @classmethod
@@ -45,7 +47,8 @@ class PoolImageItem:
         return cls(
             image_id=data.get("id"),
             origin=data.get("origin", "random"),
-            successes=data.get("successes", 0)
+            successes=data.get("successes", 0),
+            failures=data.get("failures", 0)
         )
 
 
@@ -83,7 +86,7 @@ def get_random_images(
     
     # Jeśli potrzebujemy PoolImageItem, konwertuj
     if as_pool_items:
-        return [PoolImageItem(img.id, origin="random") for img in images]
+        return [PoolImageItem(img.id, origin="random", successes=0, failures=0) for img in images]
     
     return images
 
@@ -145,32 +148,23 @@ def generate_children(
     
     Args:
         db: Sesja bazy danych
-        parent_items: Lista rodziców (PoolImageItem)
-        difference_vector: Wektor różnicy (np.ndarray)
+        parent_items: Lista rodziców (PoolImageItem) posortowana od najlepszego
+        difference_vector: Wektor różnicy
         count: Liczba dzieci do wygenerowania
-        is_positive: Czy to dzieci pozytywne
+        is_positive: Czy to dzieci obrazów pozytywnych
         exclude_ids: Lista ID obrazów do wykluczenia
         previous_pool_ids: Lista ID obrazów z poprzedniej puli
     
     Returns:
-        Lista PoolImageItem dla dzieci
+        Lista dzieci (PoolImageItem)
     """
-    # Jeśli brak rodziców, zwróć pustą listę
     if not parent_items:
         logger.warning("Brak rodziców do generowania dzieci.")
         return []
     
-    # Pobierz embeddingi dla rodziców
+    # Pobierz embeddingi rodziców
     parent_ids = [item.id for item in parent_items]
     parent_embeddings = get_image_embeddings(db, parent_ids)
-    
-    # Jeśli brak embeddingów, zwróć pustą listę
-    if not parent_embeddings:
-        logger.warning("Brak embeddingów dla rodziców.")
-        return []
-    
-    # Inicjalizuj listę dzieci
-    children = []
     
     # Przygotuj listę ID do wykluczenia
     if exclude_ids is None:
@@ -182,11 +176,34 @@ def generate_children(
     # Dodaj ID rodziców do wykluczenia
     exclude_ids.extend(parent_ids)
     
-    # Generuj dzieci
-    for i in range(count):
-        # Wybierz losowego rodzica
-        parent_item = random.choice(parent_items)
+    # Lista dzieci
+    children = []
+    
+    # Rozdzielenie dzieci między rodziców zgodnie ze specyfikacją
+    num_parents = len(parent_items)
+    if num_parents == 0:
+        return []
+    
+    # Każdy rodzic dostaje count // num_parents dzieci
+    children_per_parent = count // num_parents
+    
+    # Reszta dzieci idzie do najlepszych rodziców
+    remainder = count % num_parents
+    
+    logger.info(f"Generowanie {count} dzieci od {num_parents} rodziców.")
+    logger.info(f"Każdy rodzic dostaje {children_per_parent} dzieci, a {remainder} najlepszych rodziców dostaje po 1 dodatkowym dziecku.")
+    
+    # Przydziel dzieci rodzicom
+    for i, parent_item in enumerate(parent_items):
         parent_id = parent_item.id
+        
+        # Liczba dzieci dla tego rodzica
+        num_children = children_per_parent + (1 if i < remainder else 0)
+        
+        if num_children == 0:
+            continue
+        
+        logger.info(f"Rodzic {parent_id} (pozycja {i+1} w rankingu) generuje {num_children} dzieci.")
         
         # Pobierz embedding rodzica
         if parent_id not in parent_embeddings:
@@ -195,97 +212,93 @@ def generate_children(
         
         parent_embedding = parent_embeddings[parent_id]
         
-        # Generuj dziecko
-        found_child = False
-        attempts = 0
-        max_attempts = 10
-        
-        while not found_child and attempts < max_attempts:
-            # Dodaj losowy szum do wektora różnicy
-            noise = np.random.randn(len(difference_vector)) * 0.1
-            child_direction = difference_vector + noise
+        # Generuj dzieci dla tego rodzica
+        for _ in range(num_children):
+            # Generuj dziecko
+            found_child = False
+            attempts = 0
+            max_attempts = 10
             
-            # Normalizacja wektora
-            norm = np.linalg.norm(child_direction)
-            if norm > 0:
-                child_direction = child_direction / norm
-            
-            # Oblicz embedding dziecka (przesunięcie w kierunku wektora różnicy)
-            shift_scale = random.uniform(0.1, 0.3)
-            child_embedding = np.array(parent_embedding) + child_direction * shift_scale
-            
-            # Normalizacja embeddingu dziecka
-            norm = np.linalg.norm(child_embedding)
-            if norm > 0:
-                child_embedding = child_embedding / norm
-            
-            # Znajdź najbliższy obraz do embeddingu dziecka
-            child_id = find_nearest_image(
-                db, 
-                child_embedding.tolist(), 
-                exclude_ids=exclude_ids
-            )
-            
-            if child_id:
-                # Dodaj dziecko do listy
-                child = PoolImageItem(
-                    image_id=child_id,
-                    origin=f"child_of_{parent_id}"
-                )
-                children.append(child)
+            while not found_child and attempts < max_attempts:
+                # Dodaj losowy szum do wektora różnicy
+                noise = np.random.randn(len(difference_vector)) * 0.1
+                child_direction = difference_vector + noise
                 
-                # Dodaj ID dziecka do wykluczenia
-                exclude_ids.append(child_id)
+                # Normalizacja wektora
+                norm = np.linalg.norm(child_direction)
+                if norm > 0:
+                    child_direction = child_direction / norm
                 
-                found_child = True
-                logger.info(f"Wygenerowano dziecko {child_id} z rodzica {parent_id}.")
-            else:
-                attempts += 1
-        
-        # Jeśli nie znaleziono dziecka po próbach z losowym szumem, 
-        # spróbuj z większym przesunięciem
-        if not found_child:
-            logger.warning(f"Nie znaleziono dziecka dla rodzica {parent_id} po {max_attempts} próbach.")
-            
-            # Spróbuj z większym przesunięciem
-            shift_scale = random.uniform(0.3, 0.5)
-            child_embedding = np.array(parent_embedding) + difference_vector * shift_scale
-            
-            # Normalizacja embeddingu dziecka
-            norm = np.linalg.norm(child_embedding)
-            if norm > 0:
-                child_embedding = child_embedding / norm
-            
-            # Znajdź najbliższy obraz do embeddingu dziecka
-            child_id = find_nearest_image(
-                db, 
-                child_embedding.tolist(), 
-                exclude_ids=exclude_ids
-            )
-            
-            if child_id:
-                # Dodaj dziecko do listy
-                child = PoolImageItem(
-                    image_id=child_id,
-                    origin=f"child_of_{parent_id}_large_shift"
-                )
-                children.append(child)
+                # Oblicz embedding dziecka (przesunięcie w kierunku wektora różnicy)
+                shift_scale = random.uniform(0.1, 0.3)
+                child_embedding = np.array(parent_embedding) + child_direction * shift_scale
                 
-                # Dodaj ID dziecka do wykluczenia
-                exclude_ids.append(child_id)
+                # Normalizacja embeddingu dziecka
+                norm = np.linalg.norm(child_embedding)
+                if norm > 0:
+                    child_embedding = child_embedding / norm
                 
-                logger.info(f"Wygenerowano dziecko {child_id} z rodzica {parent_id} z większym przesunięciem.")
-    
-    # Jeśli nie udało się wygenerować wystarczającej liczby dzieci, uzupełnij losowymi obrazami
-    if len(children) < count:
-        missing_count = count - len(children)
-        logger.warning(f"Wygenerowano tylko {len(children)}/{count} dzieci. Uzupełniam {missing_count} losowymi obrazami.")
-        
-        # Pobierz losowe obrazy
-        random_items = get_random_images_as_pool_items(
-            db, missing_count, is_positive, exclude_ids
-        )
-        children.extend(random_items)
+                # Znajdź najbliższy obraz
+                from .embedding import find_nearest_image
+                
+                # Konwertuj embedding na listę, jeśli jest tablicą numpy
+                if isinstance(child_embedding, np.ndarray):
+                    child_embedding = child_embedding.tolist()
+                
+                # Wywołaj funkcję find_nearest_image
+                result = find_nearest_image(db, child_embedding, exclude_ids)
+                
+                if result is None:
+                    # Jeśli nie znaleziono, spróbuj z większym przesunięciem
+                    logger.info(f"Nie znaleziono dziecka, próba z większym przesunięciem.")
+                    shift_scale = random.uniform(0.3, 0.5)
+                    child_embedding = np.array(parent_embedding) + child_direction * shift_scale
+                    
+                    # Normalizacja embeddingu dziecka
+                    norm = np.linalg.norm(child_embedding)
+                    if norm > 0:
+                        child_embedding = child_embedding / norm
+                    
+                    # Konwertuj embedding na listę, jeśli jest tablicą numpy
+                    if isinstance(child_embedding, np.ndarray):
+                        child_embedding = child_embedding.tolist()
+                    
+                    # Wywołaj funkcję find_nearest_image ponownie
+                    result = find_nearest_image(db, child_embedding, exclude_ids)
+                
+                if result is not None:
+                    # Sprawdź, czy znaleziony obraz jest odpowiedniego typu (pozytywny/negatywny)
+                    is_correct_type = (result["type"] == "POSITIVE") if is_positive else (result["type"] == "NEGATIVE")
+                    
+                    if is_correct_type:
+                        found_child = True
+                        child_id = result["id"]
+                        exclude_ids.append(child_id)
+                        
+                        # Dodaj dziecko do listy
+                        child = PoolImageItem(
+                            image_id=child_id,
+                            origin=f"child_of_{parent_id}",
+                            successes=0,  # Resetujemy licznik sukcesów
+                            failures=0    # Resetujemy licznik porażek
+                        )
+                        children.append(child)
+                        
+                        logger.info(f"Wygenerowano dziecko {child_id} od rodzica {parent_id}.")
+                    else:
+                        logger.warning(f"Znaleziony obraz {result['id']} ma niewłaściwy typ {result['type']}, oczekiwano {'POSITIVE' if is_positive else 'NEGATIVE'}.")
+                        attempts += 1
+                else:
+                    attempts += 1
+            
+            if not found_child:
+                logger.warning(f"Nie udało się wygenerować dziecka dla rodzica {parent_id} po {max_attempts} próbach.")
+                # Jeśli nie udało się wygenerować dziecka po wszystkich próbach, użyj losowego obrazu
+                random_image = get_random_images_as_pool_items(db, 1, is_positive, exclude_ids)
+                if random_image:
+                    logger.info(f"Użyto losowego obrazu jako dziecka dla rodzica {parent_id}.")
+                    random_image[0].origin = f"random_fallback_for_{parent_id}"
+                    children.append(random_image[0])
     
     return children
 
@@ -406,6 +419,11 @@ def process_pool_generation(
     """
     pool_type = "pozytywnych" if is_positive else "negatywnych"
     logger.info(f"Generowanie puli {pool_type} obrazów.")
+    logger.info(f"Dane wejściowe: {len(successful_sorted)} obrazów z sukcesami, suma sukcesów: {total_successes}, liczba par: {num_pairs}")
+    
+    # Wyświetl szczegóły obrazów z sukcesami
+    for idx, item in enumerate(successful_sorted):
+        logger.info(f"Obraz {idx+1} z sukcesami: id={item['id']}, successes={item.get('successes', 0)}")
     
     # Inicjalizuj nową pulę
     new_pool = []
@@ -413,39 +431,42 @@ def process_pool_generation(
     # Wykluczenia dla losowych obrazów
     exclude_ids = []
     
-    # Strategia 1: Jeśli mamy więcej sukcesów niż potrzebujemy par
-    if total_successes >= num_pairs:
-        logger.info(f"Strategia 1: {total_successes} sukcesów >= {num_pairs} par.")
+    # Przypadek A: Jeśli mamy więcej sukcesów niż potrzebujemy par
+    if total_successes > num_pairs:
+        logger.info(f"Przypadek A: {total_successes} sukcesów > {num_pairs} par.")
         
-        # "Kupujemy" obrazy z rankingu (zachowujemy najlepsze)
-        for item in successful_sorted[:num_pairs]:
-            new_pool.append(PoolImageItem(
-                image_id=item["id"],
-                origin="bought",
-                successes=0  # Resetujemy licznik sukcesów
-            ))
-            exclude_ids.append(item["id"])
-            
-        logger.info(f"Zachowano {len(new_pool)} najlepszych obrazów.")
-    
-    # Strategia 2: Jeśli mamy mniej sukcesów niż potrzebujemy par
-    else:
-        logger.info(f"Strategia 2: {total_successes} sukcesów < {num_pairs} par.")
+        # Obliczamy dostępne punkty
+        points = total_successes - num_pairs
+        logger.info(f"Dostępne punkty: {points}")
         
-        # Zachowaj wszystkie obrazy z sukcesami
+        # "Kupujemy" obrazy z rankingu
+        bought_count = 0
         for item in successful_sorted:
+            success_count = item.get("successes", 0)
+            
+            # Kupujemy obraz, nawet jeśli nie mamy wystarczająco punktów
             new_pool.append(PoolImageItem(
                 image_id=item["id"],
                 origin="bought",
-                successes=0  # Resetujemy licznik sukcesów
+                successes=0,  # Resetujemy licznik sukcesów
+                failures=0    # Resetujemy licznik porażek
             ))
             exclude_ids.append(item["id"])
+            bought_count += 1
             
-        logger.info(f"Zachowano {len(new_pool)} obrazów z sukcesami.")
+            # Odejmujemy punkty
+            points -= success_count
+            logger.info(f"Kupiono obraz id={item['id']} za {success_count} punktów. Pozostało: {points} punktów.")
+            
+            # Jeśli wyczerpaliśmy punkty, kończymy proces kupowania
+            if points <= 0:
+                break
         
-        # Generuj dzieci na podstawie obrazów z sukcesami
-        if successful_sorted and len(new_pool) < num_pairs:
-            children_count = min(len(successful_sorted), num_pairs - len(new_pool))
+        logger.info(f"Kupiono {bought_count} obrazów.")
+        
+        # Jeśli nie zapełniliśmy puli, generujemy dzieci
+        if len(new_pool) < num_pairs:
+            children_count = num_pairs - len(new_pool)
             logger.info(f"Generowanie {children_count} dzieci.")
             
             children = generate_children(
@@ -460,6 +481,32 @@ def process_pool_generation(
             
             for child in children:
                 exclude_ids.append(child.id)
+                
+            new_pool.extend(children)
+            logger.info(f"Wygenerowano {len(children)} dzieci.")
+    
+    # Przypadek B: Jeśli mamy mniej lub tyle samo sukcesów co par
+    else:
+        logger.info(f"Przypadek B: {total_successes} sukcesów <= {num_pairs} par.")
+        
+        # Generujemy dokładnie S dzieci
+        if successful_sorted and total_successes > 0:
+            logger.info(f"Generowanie {total_successes} dzieci.")
+            
+            children = generate_children(
+                db=db,
+                parent_items=[PoolImageItem.from_dict(item) for item in successful_sorted],
+                difference_vector=difference_vector,
+                count=total_successes,
+                is_positive=is_positive,
+                exclude_ids=exclude_ids,
+                previous_pool_ids=previous_ids
+            )
+            
+            for child in children:
+                exclude_ids.append(child.id)
+                child.successes = 0  # Resetujemy licznik sukcesów
+                child.failures = 0  # Resetujemy licznik porażek
                 
             new_pool.extend(children)
             logger.info(f"Wygenerowano {len(children)} dzieci.")

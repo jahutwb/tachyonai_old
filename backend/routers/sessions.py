@@ -46,7 +46,7 @@ def create_session(
     Logika:
     1. Sprawdza czy istnieje jakakolwiek sesja użytkownika - jeśli nie, tworzy nową z losową pulą
     2. Sprawdza czy istnieje aktywna sesja - jeśli tak, zwraca informację o niej
-    3. Sprawdza czy istnieje sesja PENDING - jeśli tak, zwraca informację o niej
+    3. Sprawdza czy istnieje sesja PENDING - jeśli tak, aktywuje ją
     4. Sprawdza czy istnieje zakończona sesja - jeśli tak, tworzy nową z pulą generowaną algorytmem quasi-genetycznym
     """
     try:
@@ -139,36 +139,31 @@ def create_session(
         ).first()
         
         if pending_session:
-            logger.info(f"Znaleziono sesję PENDING {pending_session.id} dla użytkownika {current_user.id}")
+            logger.info(f"Znaleziono sesję PENDING {pending_session.id} dla użytkownika {current_user.id}, aktywuję ją")
+            
+            # Aktywuj sesję PENDING
+            pending_session.status = "ACTIVE"
+            pending_session.started_at = datetime.utcnow()
+            db.commit()
+            db.refresh(pending_session)
             
             # Obliczyć statystyki dla nowej puli
             pos_pool_json = pending_session.pos_pool_json if isinstance(pending_session.pos_pool_json, list) else json.loads(pending_session.pos_pool_json)
             neg_pool_json = pending_session.neg_pool_json if isinstance(pending_session.neg_pool_json, list) else json.loads(pending_session.neg_pool_json)
             
-            # Liczenie statystyk dla nowej, oczekującej puli
-            pos_origins = {"child": 0, "bought": 0, "random": 0}
-            neg_origins = {"child": 0, "bought": 0, "random": 0}
-            
-            for item in pos_pool_json:
-                origin = item.get("origin", "unknown")
-                if origin in pos_origins:
-                    pos_origins[origin] += 1
-            
-            for item in neg_pool_json:
-                origin = item.get("origin", "unknown")
-                if origin in neg_origins:
-                    neg_origins[origin] += 1
-            
+            # Zwróć informacje o aktywowanej sesji
             return {
                 "session_exists": True,
-                "session_status": "PENDING",
+                "session_status": "ACTIVE",
                 "session_id": pending_session.id,
                 "has_unfinished_round": False,
                 "unfinished_round_id": None,
-                "new_pool_stats": {
-                    "pos_origins": pos_origins,
-                    "neg_origins": neg_origins,
-                    "total_pairs": min(len(pos_pool_json), len(neg_pool_json))
+                "session_stats": {
+                    "success_count": 0,
+                    "failure_count": 0,
+                    "success_rate": 0,
+                    "profit_factor": 1.0,
+                    "remaining_pairs": pending_session.remaining_pairs
                 }
             }
         
@@ -545,7 +540,7 @@ def get_next_pool_stats(
         if not session:
             raise HTTPException(status_code=404, detail="Sesja nie znaleziona lub brak dostępu")
             
-        # Sprawdź, czy istnieje już wygenerowana ale nieużyta sesja dla użytkownika
+        # Sprawdź czy istnieje już wygenerowana ale nieużyta sesja dla użytkownika
         next_session = db.query(SessionModel).filter(
             SessionModel.user_id == current_user.id,
             SessionModel.status == "PENDING"
@@ -613,8 +608,15 @@ def get_next_pool_stats(
                 # Sprawdźmy, czy item jest słownikiem czy listą
                 if isinstance(item, dict):
                     origin = item.get("origin", "random")  # Domyślnie "random" jeśli pole nie istnieje
-                    if origin in pos_origins:
+                    
+                    # Sprawdź, czy origin zaczyna się od "child_of_" - jeśli tak, to jest to dziecko
+                    if origin.startswith("child_of_") or origin.startswith("random_fallback_for_"):
+                        pos_origins["child"] += 1
+                    elif origin in pos_origins:
                         pos_origins[origin] += 1
+                    else:
+                        # Jeśli origin nie pasuje do żadnej kategorii, traktujemy jako random
+                        pos_origins["random"] += 1
                 else:
                     # Jeśli item nie jest słownikiem, traktujemy go jako dane bez origin (domyślnie random)
                     pos_origins["random"] += 1
@@ -627,8 +629,15 @@ def get_next_pool_stats(
                 # Sprawdźmy, czy item jest słownikiem czy listą
                 if isinstance(item, dict):
                     origin = item.get("origin", "random")  # Domyślnie "random" jeśli pole nie istnieje
-                    if origin in neg_origins:
+                    
+                    # Sprawdź, czy origin zaczyna się od "child_of_" - jeśli tak, to jest to dziecko
+                    if origin.startswith("child_of_") or origin.startswith("random_fallback_for_"):
+                        neg_origins["child"] += 1
+                    elif origin in neg_origins:
                         neg_origins[origin] += 1
+                    else:
+                        # Jeśli origin nie pasuje do żadnej kategorii, traktujemy jako random
+                        neg_origins["random"] += 1
                 else:
                     # Jeśli item nie jest słownikiem, traktujemy go jako dane bez origin (domyślnie random)
                     neg_origins["random"] += 1
@@ -664,47 +673,6 @@ def get_next_pool_stats(
         logger.error(f"Błąd podczas pobierania statystyk puli: {str(e)}")
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
-
-
-# Funkcja usunięta - logika jest już zaimplementowana w get_next_round w rounds.py
-# def get_next_round_images(db: Session, session_id: int) -> Tuple[Optional[int], Optional[int]]:
-#     """
-#     Pobiera obrazy na następną rundę.
-#     
-#     Args:
-#         db: Sesja bazy danych
-#         session_id: ID sesji
-#     
-#     Returns:
-#         Tuple (pos_id, neg_id) lub (None, None), jeśli nie ma więcej obrazów
-#     """
-
-
-# Funkcja usunięta - logika jest już zaimplementowana w submit_round_choice w rounds.py
-# def process_round_result(
-#     db: Session, 
-#     session_id: int, 
-#     round_id: int, 
-#     pos_id: int, 
-#     neg_id: int,
-#     result: bool,
-#     profit_fraction: float
-# ) -> Optional[SessionModel]:
-#     """
-#     Przetwarza wynik rundy i aktualizuje sesję.
-#     
-#     Args:
-#         db: Sesja bazy danych
-#         session_id: ID sesji
-#         round_id: ID rundy
-#         pos_id: ID obrazu pozytywnego
-#         neg_id: ID obrazu negatywnego
-#         result: Wynik rundy (True = sukces, False = porażka)
-#         profit_fraction: Część zysku z rundy
-#     
-#     Returns:
-#         Zaktualizowana sesja
-#     """
 
 
 @router.post("/sessions/generate-pending", response_model=schemas.Session)
@@ -801,6 +769,17 @@ def trigger_pool_generation(
         
         if not session:
             raise HTTPException(status_code=404, detail="Sesja nie znaleziona")
+        
+        # Usuń istniejącą sesję PENDING, jeśli istnieje
+        existing_pending = db.query(SessionModel).filter(
+            SessionModel.user_id == current_user.id,
+            SessionModel.status == "PENDING"
+        ).first()
+        
+        if existing_pending:
+            logger.info(f"Usuwam istniejącą sesję PENDING (id={existing_pending.id}) dla użytkownika {current_user.id}")
+            db.delete(existing_pending)
+            db.commit()
         
         # Wykorzystaj istniejącą funkcję generate_pending_session
         # Przygotuj obiekt request zgodny z oczekiwanym przez generate_pending_session
