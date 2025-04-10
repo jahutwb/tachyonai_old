@@ -610,8 +610,10 @@ def get_next_pool_stats(
                     origin = item.get("origin", "random")  # Domyślnie "random" jeśli pole nie istnieje
                     
                     # Sprawdź, czy origin zaczyna się od "child_of_" - jeśli tak, to jest to dziecko
-                    if origin.startswith("child_of_") or origin.startswith("random_fallback_for_"):
+                    if origin.startswith("child_of_"):
                         pos_origins["child"] += 1
+                    elif origin.startswith("random_fallback_for_"):
+                        pos_origins["random"] += 1
                     elif origin in pos_origins:
                         pos_origins[origin] += 1
                     else:
@@ -631,8 +633,10 @@ def get_next_pool_stats(
                     origin = item.get("origin", "random")  # Domyślnie "random" jeśli pole nie istnieje
                     
                     # Sprawdź, czy origin zaczyna się od "child_of_" - jeśli tak, to jest to dziecko
-                    if origin.startswith("child_of_") or origin.startswith("random_fallback_for_"):
+                    if origin.startswith("child_of_"):
                         neg_origins["child"] += 1
+                    elif origin.startswith("random_fallback_for_"):
+                        neg_origins["random"] += 1
                     elif origin in neg_origins:
                         neg_origins[origin] += 1
                     else:
