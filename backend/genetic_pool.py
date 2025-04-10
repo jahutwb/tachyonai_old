@@ -234,17 +234,12 @@ def generate_children(
                 shift_scale = 1.0 + attempts * 1.0
                 child_embedding = np.array(parent_embedding) + child_direction * shift_scale
                 
-                # Normalizacja embeddingu dziecka
-                norm = np.linalg.norm(child_embedding)
-                if norm > 0:
-                    child_embedding = child_embedding / norm
-                
-                # Znajdź najbliższy obraz
-                from .embedding import find_nearest_image
-                
                 # Konwertuj embedding na listę, jeśli jest tablicą numpy
                 if isinstance(child_embedding, np.ndarray):
                     child_embedding = child_embedding.tolist()
+                
+                # Znajdź najbliższy obraz
+                from .embedding import find_nearest_image
                 
                 # Wywołaj funkcję find_nearest_image
                 result = find_nearest_image(db, child_embedding, exclude_ids)
