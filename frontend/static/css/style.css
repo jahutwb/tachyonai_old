@@ -665,7 +665,7 @@ a:hover {
     display: flex;
     flex-direction: row;
     align-items: center;
-    justify-content: space-between;
+    justify-content: center;
     width: 100%;
     max-width: 1200px;
     gap: var(--spacing-md);
@@ -682,6 +682,8 @@ a:hover {
     flex-shrink: 0;
     margin: 0;
     padding: 0;
+    position: absolute;
+    left: 0;
 }
 
 .next-button-wrapper {
