@@ -376,8 +376,10 @@ class UIController {
     // Ustawienie statusu wyniku
     const resultStatus = document.querySelector(DOM.RESULT_STATUS);
     if (resultStatus) {
-      resultStatus.textContent = result === 'SUCCESS' ? 'SUKCES!' : 'PORAŻKA!';
-      resultStatus.className = `result-status ${result === 'SUCCESS' ? 'success-result' : 'failure-result'}`;
+      const profitPercent = (percentChange * 100).toFixed(2);
+      const profitSign = profitPercent >= 0 ? '+' : '';
+      resultStatus.textContent = `${result === 'SUCCESS' ? 'Sukces' : 'Porażka'}: ${profitSign}${profitPercent}%`;
+      resultStatus.className = result === 'SUCCESS' ? 'result-status success' : 'result-status failure';
     }
     
     // Wyświetlenie zmiany procentowej

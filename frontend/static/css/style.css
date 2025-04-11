@@ -648,17 +648,13 @@ a:hover {
 }
 
 .result-status {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    font-size: 18px;
+    font-size: 24px;
     font-weight: bold;
-    padding: 8px 16px;
-    border-radius: var(--border-radius);
-    min-width: 150px;
-    height: 40px;
     text-align: center;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    margin-bottom: var(--spacing-md);
+    padding: 12px 24px;
+    border-radius: var(--border-radius);
+    display: inline-block;
 }
 
 .success-result {
@@ -908,4 +904,10 @@ a:hover {
 @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
+}
+
+#next-round-button {
+    margin: 20px auto;
+    display: block;
+    width: 200px;
 }
