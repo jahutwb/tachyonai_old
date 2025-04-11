@@ -671,7 +671,6 @@ function renderStimuliRanking(ranking, type) {
                 <div class="stimulus-details">
                     <div class="stimulus-id">ID: ${stimulus.id}</div>
                     <div class="stimulus-success">Sukcesy w sesji: ${stimulus.successes || 0}</div>
-                    <div class="stimulus-failure">Porażki w sesji: ${stimulus.failures || 0}</div>
                     <div>Pochodzenie: ${originLabel}</div>
                     <div class="stimulus-profit">Zysk: ${profit}%</div>
                 </div>
