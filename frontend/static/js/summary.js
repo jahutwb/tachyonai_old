@@ -615,47 +615,54 @@ function renderWealthChart(rounds) {
 
 // Funkcja renderująca ranking bodźców
 function renderStimuliRanking(ranking, type) {
-    // Funkcja obsługuje tylko bodźce pozytywne
     if (type !== 'pos') {
         console.log(`Ranking bodźców typu ${type} pominięty - obsługiwane są tylko bodźce pozytywne`);
         return;
     }
-    
+
     const container = getElement('positive-stimulus-ranking');
     if (!container) {
         console.error('Nie znaleziono kontenera dla rankingu bodźców pozytywnych');
         return;
     }
-    
+
     if (!ranking || ranking.length === 0) {
         container.innerHTML = '<p>Brak danych dla rankingu bodźców pozytywnych</p>';
         return;
     }
-    
-    // Filtruj tylko bodźce z successes > 0 (zgodnie z wymaganiami)
+
     const successfulStimuli = ranking.filter(stimulus => stimulus.successes > 0);
-    
+
     if (successfulStimuli.length === 0) {
         container.innerHTML = '<p>Brak bodźców z sukcesami w tej sesji</p>';
         return;
     }
-    
-    // Sortuj najpierw po liczbie sukcesów (malejąco), potem po zysku (cumulative_factor - 1) malejąco
+
     const sortedStimuli = [...successfulStimuli].sort((a, b) => {
         if (a.successes !== b.successes) {
-            return b.successes - a.successes; // Najpierw po liczbie sukcesów malejąco
+            return b.successes - a.successes;
         } else {
-            // Przy remisie po (cumulative_factor - 1) malejąco
             return (b.cumulative_factor - 1) - (a.cumulative_factor - 1);
         }
     });
-    
-    // Przygotowanie HTML
+
     let html = '';
-    
+
     sortedStimuli.forEach((stimulus, index) => {
         const profit = ((stimulus.cumulative_factor - 1) * 100).toFixed(2);
-        
+
+        // Obsługa pola origin
+        let originLabel = 'Losowy';
+        if (stimulus.origin.startsWith('child_of_')) {
+            if (stimulus.origin.includes('_noise_')) {
+                originLabel = 'Szum potomny';
+            } else {
+                originLabel = 'Potomek';
+            }
+        } else if (stimulus.origin === 'bought') {
+            originLabel = 'Kupiony';
+        }
+
         html += `
             <div class="stimulus-card">
                 <div class="stimulus-image">
@@ -665,19 +672,17 @@ function renderStimuliRanking(ranking, type) {
                     <div class="stimulus-id">ID: ${stimulus.id}</div>
                     <div class="stimulus-success">Sukcesy w sesji: ${stimulus.successes || 0}</div>
                     <div class="stimulus-failure">Porażki w sesji: ${stimulus.failures || 0}</div>
-                    <div>Pochodzenie: ${
-                        stimulus.origin === 'child' ? 'Dziecko' : 
-                        stimulus.origin === 'bought' ? 'Kupiony' : 'Losowy'
-                    }</div>
+                    <div>Pochodzenie: ${originLabel}</div>
                     <div class="stimulus-profit">Zysk: ${profit}%</div>
                 </div>
             </div>
         `;
     });
-    
+
     container.innerHTML = html;
     console.log(`Wyrenderowano ranking bodźców pozytywnych z ${sortedStimuli.length} elementami`);
 }
+
 
 // Funkcja renderująca szczegóły rund
 function renderRoundsDetails(rounds) {

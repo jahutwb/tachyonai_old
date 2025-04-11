@@ -1,11 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
-from typing import List, Any, Dict, Tuple, Optional
+from fastapi import APIRouter, Depends, HTTPException, status
+from typing import List, Dict, Optional
 from sqlalchemy.orm import Session
 import traceback
 import logging
-import numpy as np
-import random
-import json
 from datetime import datetime
 
 from ..database import get_db
@@ -13,8 +10,9 @@ from ..models import User, Session as SessionModel, Round, Image
 from .. import schemas
 from ..auth import get_current_user
 from ..schemas import SessionResponse
-from ..genetic_pool import generate_pool_with_genetic_algorithm, get_random_pool, PoolImageItem
+from ..genetic_pool import generate_pool_with_genetic_algorithm, get_random_pool
 from ..embedding import find_nearest_image
+from ..pool_image_item import PoolImageItem  # 👈 Zmiana: import klasy PoolImageItem
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -352,11 +350,8 @@ def resume_session(
                     for i, item in enumerate(pool):
                         if not isinstance(item, dict):
                             logger.error(f"Obraz {i} w {pool_name} puli nie jest słownikiem: {type(item)}")
-                            raise ValueError(f"Obraz {i} w {pool_name} puli nie jest słownikiem")
-                        
                         if "id" not in item:
                             logger.error(f"Obraz {i} w {pool_name} puli nie ma pola 'id'")
-                            raise ValueError(f"Obraz {i} w {pool_name} puli nie ma pola 'id'")
                 
                 logger.info(f"Pola JSON w sesji {session.id} są prawidłowo sformatowane")
                 
@@ -436,179 +431,50 @@ def get_session_summary(
 ):
     """Pobiera podsumowanie sesji o podanym ID."""
     try:
-        logger.info(f"Pobieram podsumowanie sesji {session_id} dla użytkownika {current_user.id}")
-        
         session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
-        if not session:
-            logger.warning(f"Sesja {session_id} nie znaleziona")
-            raise HTTPException(status_code=404, detail="Sesja nie znaleziona")
-        if session.user_id != current_user.id:
-            logger.warning(f"Brak dostępu do sesji {session_id} dla użytkownika {current_user.id}")
-            raise HTTPException(status_code=403, detail="Brak dostępu do tej sesji")
-        
-        logger.info(f"Sesja {session_id} znaleziona, status: {session.status}, session_profit_factor: {session.session_profit_factor:.6f}, remaining_pairs: {session.remaining_pairs}")
-        
-        # Pobierz liczbę sukcesów i porażek
-        success_count = db.query(Round).filter(
-            Round.session_id == session_id, Round.result == "SUCCESS"
-        ).count()
-        
-        failure_count = db.query(Round).filter(
-            Round.session_id == session_id, Round.result == "FAILURE"
-        ).count()
-        
-        logger.info(f"Statystyki sesji {session_id}: success_count={success_count}, failure_count={failure_count}, total_rounds={success_count + failure_count}")
-        
-        # Inicjalizacja pustych list dla rankingów, nawet jeśli nie znajdziemy odpowiednich obrazów
-        pos_ranking = []
-        neg_ranking = []
-        
-        # Inicjalizacja pustych list dla pul bodźców, jeśli nie są dostępne w sesji
-        pos_stimuli = session.pos_pool_json if session.pos_pool_json else []
-        neg_stimuli = session.neg_pool_json if session.neg_pool_json else []
-        
-        # Pobierz wszystkie rundy dla sesji, aby obliczyć cumulative_factor dla każdego bodźca
+        if not session or session.user_id != current_user.id:
+            raise HTTPException(
+                status_code=404 if not session else 403,
+                detail="Sesja nie znaleziona lub brak dostępu"
+            )
+
         rounds = db.query(Round).filter(Round.session_id == session_id).all()
-        
-        # Słowniki do przechowywania cumulative_factor dla każdego bodźca
-        pos_cumulative_factors = {}
-        neg_cumulative_factors = {}
-        
-        # Słowniki do przechowywania liczby sukcesów i porażek dla każdego bodźca
-        pos_success_counts = {}
-        pos_failure_counts = {}
-        neg_success_counts = {}
-        neg_failure_counts = {}
-        
-        # Inicjalizuj cumulative_factor=1.0 dla wszystkich bodźców w puli
-        for item in pos_stimuli:
-            if "id" in item:
-                pos_cumulative_factors[item["id"]] = 1.0
-                pos_success_counts[item["id"]] = 0
-                pos_failure_counts[item["id"]] = 0
-                
-        for item in neg_stimuli:
-            if "id" in item:
-                neg_cumulative_factors[item["id"]] = 1.0
-                neg_success_counts[item["id"]] = 0
-                neg_failure_counts[item["id"]] = 0
-                
-        # Oblicz cumulative_factor i zlicz sukcesy/porażki dla każdego bodźca na podstawie rund
-        for round_obj in rounds:
-            if round_obj.result == "SUCCESS":
-                # Dla bodźca pozytywnego (wyświetlonego w przypadku sukcesu)
-                if round_obj.pos_image_id in pos_cumulative_factors:
-                    pos_cumulative_factors[round_obj.pos_image_id] *= (1 + round_obj.profit_fraction)
-                    pos_success_counts[round_obj.pos_image_id] = pos_success_counts.get(round_obj.pos_image_id, 0) + 1
-                
-                # Dla bodźca negatywnego (przetrwanie - nie wyświetlony w przypadku sukcesu)
-                if round_obj.neg_image_id in neg_cumulative_factors:
-                    neg_cumulative_factors[round_obj.neg_image_id] *= (1 + round_obj.profit_fraction)
-                    neg_success_counts[round_obj.neg_image_id] = neg_success_counts.get(round_obj.neg_image_id, 0) + 1
-            elif round_obj.result == "FAILURE":
-                # Dla bodźca pozytywnego (nie wyświetlony w przypadku porażki)
-                if round_obj.pos_image_id in pos_failure_counts:
-                    pos_failure_counts[round_obj.pos_image_id] = pos_failure_counts.get(round_obj.pos_image_id, 0) + 1
-                
-                # Dla bodźca negatywnego (wyświetlony w przypadku porażki)
-                if round_obj.neg_image_id in neg_failure_counts:
-                    neg_failure_counts[round_obj.neg_image_id] = neg_failure_counts.get(round_obj.neg_image_id, 0) + 1
-        
-        # Jeśli mamy dane w pos_pool_json, przygotuj ranking obrazów pozytywnych
-        if session.pos_pool_json:
-            logger.info(f"Przygotowuję ranking obrazów pozytywnych, liczba obrazów w puli: {len(session.pos_pool_json)}")
-            
-            try:
-                # Pobierz IDs obrazów z puli
-                pos_ids = [item["id"] for item in session.pos_pool_json if "id" in item]
-                
-                if pos_ids:
-                    # Pobierz obrazy z bazy danych
-                    pos_images = db.query(Image).filter(Image.id.in_(pos_ids)).all()
-                    logger.info(f"Znaleziono {len(pos_images)} obrazów pozytywnych w bazie danych")
-                    
-                    # Mapowanie id->item z puli
-                    pos_pool_dict = {item["id"]: item for item in session.pos_pool_json if "id" in item}
-                    
-                    # Tworzenie rankingu obrazów pozytywnych
-                    for img in pos_images:
-                        pool_data = pos_pool_dict.get(img.id, {})
-                        
-                        # Użyj obliczonych wartości sukcesów i porażek z rund
-                        successes = pos_success_counts.get(img.id, 0)
-                        failures = pos_failure_counts.get(img.id, 0)
-                        
-                        # Użyj obliczonego cumulative_factor lub 1.0 jeśli brak
-                        cumulative_factor = pos_cumulative_factors.get(img.id, 1.0)
-                        
-                        logger.info(f"Obraz pozytywny id={img.id}: successes={successes}, failures={failures}, cumulative_factor={cumulative_factor:.6f}")
-                        
-                        # Dodaj obrazy do rankingu
-                        pos_ranking.append({
-                            "id": img.id,
-                            "successes": successes,
-                            "failures": failures,
-                            "cumulative_factor": cumulative_factor,
-                            "origin": pool_data.get("origin", "random"),
-                            "parent": pool_data.get("parent") if pool_data.get("origin") == "child" else None
-                        })
-                        logger.info(f"Dodano obraz id={img.id} do rankingu pozytywnego")
-                
-                # Sortuj ranking według liczby sukcesów z puli (malejąco)
-                pos_ranking = sorted(pos_ranking, key=lambda x: x["successes"], reverse=True)
-                logger.info(f"Ranking obrazów pozytywnych gotowy, liczba obrazów: {len(pos_ranking)}")
-            except Exception as e:
-                logger.error(f"Błąd podczas przygotowywania rankingu pozytywnego: {str(e)}")
-                logger.error(traceback.format_exc())
-        
-        # Jeśli mamy dane w neg_pool_json, przygotuj ranking obrazów negatywnych
-        if session.neg_pool_json:
-            logger.info(f"Przygotowuję ranking obrazów negatywnych, liczba obrazów w puli: {len(session.neg_pool_json)}")
-            
-            try:
-                # Pobierz IDs obrazów z puli
-                neg_ids = [item["id"] for item in session.neg_pool_json if "id" in item]
-                
-                if neg_ids:
-                    # Pobierz obrazy z bazy danych
-                    neg_images = db.query(Image).filter(Image.id.in_(neg_ids)).all()
-                    logger.info(f"Znaleziono {len(neg_images)} obrazów negatywnych w bazie danych")
-                    
-                    # Mapowanie id->item z puli
-                    neg_pool_dict = {item["id"]: item for item in session.neg_pool_json if "id" in item}
-                    
-                    # Tworzenie rankingu obrazów negatywnych
-                    for img in neg_images:
-                        pool_data = neg_pool_dict.get(img.id, {})
-                        
-                        # Użyj obliczonych wartości sukcesów i porażek z rund
-                        successes = neg_success_counts.get(img.id, 0)
-                        failures = neg_failure_counts.get(img.id, 0)
-                        
-                        # Użyj obliczonego cumulative_factor lub 1.0 jeśli brak
-                        cumulative_factor = neg_cumulative_factors.get(img.id, 1.0)
-                        
-                        logger.info(f"Obraz negatywny id={img.id}: successes={successes}, failures={failures}, cumulative_factor={cumulative_factor:.6f}")
-                        
-                        # Dodaj obrazy do rankingu
-                        neg_ranking.append({
-                            "id": img.id,
-                            "successes": successes,
-                            "failures": failures,
-                            "cumulative_factor": cumulative_factor,
-                            "origin": pool_data.get("origin", "random"),
-                            "parent": pool_data.get("parent") if pool_data.get("origin") == "child" else None
-                        })
-                        logger.info(f"Dodano obraz id={img.id} do rankingu negatywnego")
-                
-                # Sortuj ranking według liczby sukcesów z puli (malejąco)
-                neg_ranking = sorted(neg_ranking, key=lambda x: x["successes"], reverse=True)
-                logger.info(f"Ranking obrazów negatywnych gotowy, liczba obrazów: {len(neg_ranking)}")
-            except Exception as e:
-                logger.error(f"Błąd podczas przygotowywania rankingu negatywnego: {str(e)}")
-                logger.error(traceback.format_exc())
-        
-        # Utwórz obiekt podsumowania
+        success_count = sum(r.result == "SUCCESS" for r in rounds)
+        failure_count = sum(r.result == "FAILURE" for r in rounds)
+
+        pos_items = {item["id"]: PoolImageItem.from_dict(item) for item in (session.pos_pool_json or [])}
+        neg_items = {item["id"]: PoolImageItem.from_dict(item) for item in (session.neg_pool_json or [])}
+
+        pos_cumulative = {id_: 1.0 for id_ in pos_items}
+        neg_cumulative = {id_: 1.0 for id_ in neg_items}
+
+        for r in rounds:
+            if r.result == "SUCCESS":
+                if r.pos_image_id in pos_items:
+                    pos_items[r.pos_image_id].successes += 1
+                    pos_cumulative[r.pos_image_id] *= (1 + r.profit_fraction)
+                if r.neg_image_id in neg_items:
+                    neg_items[r.neg_image_id].successes += 1
+                    neg_cumulative[r.neg_image_id] *= (1 + r.profit_fraction)
+            elif r.result == "FAILURE":
+                if r.pos_image_id in pos_items:
+                    pos_items[r.pos_image_id].failures += 1
+                if r.neg_image_id in neg_items:
+                    neg_items[r.neg_image_id].failures += 1
+
+        def build_ranking(items: dict, cumulative: dict):
+            return sorted([
+                {
+                    "id": id_,
+                    "successes": item.successes,
+                    "failures": item.failures,
+                    "cumulative_factor": cumulative.get(id_, 1.0),
+                    "origin": item.origin,
+                    "parent": item.parent if item.origin == "child" else None
+                }
+                for id_, item in items.items()
+            ], key=lambda x: x["successes"], reverse=True)
+
         summary = {
             "id": session.id,
             "status": session.status,
@@ -618,21 +484,17 @@ def get_session_summary(
             "success_count": success_count,
             "failure_count": failure_count,
             "round_count": success_count + failure_count,
-            "pos_stimuli": pos_stimuli,
-            "neg_stimuli": neg_stimuli,
-            "pos_ranking": pos_ranking,
-            "neg_ranking": neg_ranking
+            "pos_stimuli": [item.to_dict() for item in pos_items.values()],
+            "neg_stimuli": [item.to_dict() for item in neg_items.values()],
+            "pos_ranking": build_ranking(pos_items, pos_cumulative),
+            "neg_ranking": build_ranking(neg_items, neg_cumulative)
         }
-        
-        logger.info(f"Podsumowanie sesji {session_id} zostało wygenerowane pomyślnie: {len(pos_ranking)} obrazów pozytywnych w rankingu, {len(neg_ranking)} obrazów negatywnych w rankingu")
-        
+
         return summary
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"Błąd podczas pobierania podsumowania sesji: {str(e)}")
+        logger.error(f"Błąd podczas podsumowania sesji: {e}")
         logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Błąd serwera: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/sessions/{session_id}/rounds", response_model=List[schemas.RoundResponse])
@@ -750,7 +612,6 @@ def generate_pending_session(
     try:
         logger.info(f"Rozpoczynam generowanie nowej puli dla użytkownika {current_user.id}")
         
-        # Pobierz poprzednią sesję
         previous_session = db.query(SessionModel).filter(
             SessionModel.id == request.previous_session_id,
             SessionModel.user_id == current_user.id
@@ -759,43 +620,47 @@ def generate_pending_session(
         if not previous_session:
             raise HTTPException(status_code=404, detail="Poprzednia sesja nie znaleziona")
         
-        # Sprawdź czy poprzednia sesja jest zakończona
         if previous_session.status != "COMPLETED":
             raise HTTPException(status_code=400, detail="Poprzednia sesja nie jest zakończona")
 
-        # Parsuj JSON puli obrazów
         try:
-            pos_pool_json = previous_session.pos_pool_json
-            neg_pool_json = previous_session.neg_pool_json
-            
+            pos_pool_json = previous_session.pos_pool_json or []
+            neg_pool_json = previous_session.neg_pool_json or []
+
             logger.info(f"Pomyślnie sparsowano JSON pozytywnej puli: {len(pos_pool_json)} elementów")
             logger.info(f"Pomyślnie sparsowano JSON negatywnej puli: {len(neg_pool_json)} elementów")
         except Exception as e:
             logger.error(f"Błąd parsowania JSON puli: {str(e)}")
             raise HTTPException(status_code=500, detail="Błąd parsowania JSON puli")
-        
-        # Generuj nową pulę na podstawie poprzedniej sesji
+
         try:
-            # Generuj nową pulę
             logger.info(f"Rozpoczynam generowanie nowej puli na podstawie sesji {previous_session.id}")
             
-            # Wywołaj funkcję process_pool_generation z modułu genetic_pool
             new_pos_pool, new_neg_pool = generate_pool_with_genetic_algorithm(previous_session, db)
-            
-            logger.info(f"Wygenerowano nową pulę: {len(new_pos_pool)} pozytywnych, {len(new_neg_pool)} negatywnych")
+
+            # Upewnij się, że każdy element to instancja PoolImageItem
+            new_pos_pool_json = [
+                item.to_dict() if isinstance(item, PoolImageItem) else PoolImageItem.from_dict(item).to_dict()
+                for item in new_pos_pool
+            ]
+            new_neg_pool_json = [
+                item.to_dict() if isinstance(item, PoolImageItem) else PoolImageItem.from_dict(item).to_dict()
+                for item in new_neg_pool
+            ]
+
+            logger.info(f"Wygenerowano nową pulę: {len(new_pos_pool_json)} pozytywnych, {len(new_neg_pool_json)} negatywnych")
         except Exception as e:
             logger.error(f"Błąd generowania nowej puli: {str(e)}")
             logger.error(traceback.format_exc())
             raise HTTPException(status_code=500, detail="Błąd generowania nowej puli")
-        
-        # Utwórz nową sesję w stanie PENDING
+
         new_session = SessionModel(
             user_id=current_user.id,
             status="PENDING",
-            pos_pool_json=new_pos_pool,
-            neg_pool_json=new_neg_pool,
+            pos_pool_json=new_pos_pool_json,
+            neg_pool_json=new_neg_pool_json,
             session_profit_factor=1.0,
-            remaining_pairs=6  # Stała liczba par, zgodnie z resztą kodu
+            remaining_pairs=6
         )
         
         db.add(new_session)
@@ -804,16 +669,14 @@ def generate_pending_session(
         
         logger.info(f"Utworzono nową sesję PENDING (id={new_session.id}) dla użytkownika {current_user.id}")
         
-        return {"message": "Utworzono nową sesję PENDING"}
+        return schemas.Message(message="Utworzono nową sesję PENDING")
         
-    except HTTPException as e:
-        # Przekaż wyjątek HTTPException dalej
-        raise e
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Błąd podczas generowania sesji PENDING: {str(e)}")
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.post("/sessions/{session_id}/trigger-pool-generation", response_model=schemas.Message)
 def trigger_pool_generation(

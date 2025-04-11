@@ -8,6 +8,7 @@ from sqlalchemy import func
 from .models import Image as ImageModel, ImageTypeEnum
 from .faiss_manager import get_faiss_index_manager, _find_nearest_image_excluding
 from .embedding import get_image_embeddings
+from .pool_image_item import PoolImageItem  # 💡 Nowy import
 
 logger = logging.getLogger("backend.genetic_pool")
 logger.setLevel(logging.DEBUG)
@@ -17,31 +18,6 @@ if not logger.handlers:
     handler.setFormatter(formatter)
     logger.addHandler(handler)
     logger.propagate = True
-
-
-class PoolImageItem:
-    def __init__(self, id: int, origin: str = "random", successes: int = 0, failures: int = 0):
-        self.id = id
-        self.origin = origin
-        self.successes = successes
-        self.failures = failures
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "id": self.id,
-            "origin": self.origin,
-            "successes": self.successes,
-            "failures": self.failures
-        }
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'PoolImageItem':
-        return cls(
-            id=data.get("id"),
-            origin=data.get("origin", "random"),
-            successes=data.get("successes", 0),
-            failures=data.get("failures", 0)
-        )
 
 
 def generate_children_by_combination(
@@ -87,7 +63,6 @@ def generate_children_by_combination(
             weights = [w for (pair, w) in zip(pair_pool, pair_weights) if pair not in used_pairs]
 
             if not unused_pairs:
-                # wszystkie pary wykorzystane — pozwól na powtórzenia
                 unused_pairs = pair_pool
                 weights = pair_weights
                 used_pairs = set()
@@ -111,17 +86,14 @@ def generate_children_by_combination(
             if nearest_id and nearest_id not in exclude_ids:
                 image = db.query(ImageModel).filter(ImageModel.id == nearest_id).first()
                 if image:
-                    logger.info(f"✓ Dodano dziecko {image.id} z pary ({id1}, {id2}), distance={distance:.4f}")
-                    children.append(PoolImageItem(
-                        id=image.id,
-                        origin=f"child_of_{id1}_{id2}",
-                        successes=0,
-                        failures=0
-                    ))
+                    child = PoolImageItem.from_parents(id=image.id, parent_ids=[id1, id2])
+                    children.append(child)
                     exclude_ids.add(image.id)
+                    logger.info(f"✓ Dodano dziecko {image.id} z pary ({id1}, {id2}), distance={distance:.4f}")
             else:
                 logger.debug(f"✗ Para ({id1}, {id2}) — nearest_id={nearest_id} już był lub nie znaleziono")
             attempts += 1
+
     elif len(parent_items) == 1:
         logger.info("Tylko jeden rodzic – fallback z narastającym szumem")
         parent = parent_items[0]
@@ -143,14 +115,10 @@ def generate_children_by_combination(
             if nearest_id and nearest_id not in exclude_ids:
                 image = db.query(ImageModel).filter(ImageModel.id == nearest_id).first()
                 if image:
-                    logger.info(f"✓ Dodano dziecko {image.id} z szumu (i={i+1}), distance={distance:.4f}")
-                    children.append(PoolImageItem(
-                        id=image.id,
-                        origin=f"child_of_{parent.id}_noise_{i+1}",
-                        successes=0,
-                        failures=0
-                    ))
+                    child = PoolImageItem.from_noise(id=image.id, parent_id=parent.id, attempt=i + 1)
+                    children.append(child)
                     exclude_ids.add(image.id)
+                    logger.info(f"✓ Dodano dziecko {image.id} z szumu (i={i+1}), distance={distance:.4f}")
             else:
                 logger.debug(f"✗ Szum {i+1}: nearest_id={nearest_id} już użyty lub niepoprawny")
 
