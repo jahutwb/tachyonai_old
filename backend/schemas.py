@@ -127,7 +127,7 @@ class SessionResponse(SessionBase):
     neg_pool_json: List[Dict[str, Any]]
     session_profit_factor: float
     remaining_pairs: int
-    started_at: datetime
+    started_at: Optional[datetime] = None
     ended_at: Optional[datetime] = None
 
     class Config:
@@ -265,7 +265,7 @@ class StimulusRanking(BaseModel):
 class SessionSummary(BaseModel):
     id: int
     status: str
-    started_at: datetime
+    started_at: Optional[datetime] = None
     session_profit_factor: float
     remaining_pairs: int
     success_count: int

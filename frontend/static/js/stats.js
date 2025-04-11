@@ -42,6 +42,7 @@ async function initStats() {
     try {
         // Pobierz sesje użytkownika
         await loadUserSessions();
+        await updateSessionsList();
         
         // Pobierz ranking globalny obrazów
         await loadGlobalStimuliRanking();
@@ -52,6 +53,9 @@ async function initStats() {
         // Generuj wykresy
         generateTotalWealthChart();
         generateTimeSuccessChart();
+        
+        // Aktualizuj globalne statystyki
+        updateGlobalStats();
         
         hideLoadingOverlay();
     } catch (error) {
@@ -70,7 +74,6 @@ async function loadUserSessions() {
     }
     
     StatsState.sessions = await response.json();
-    updateSessionsList();
 }
 
 // Aktualizacja listy sesji
@@ -434,6 +437,86 @@ function generateTimeSuccessChart() {
             }
         }
     });
+}
+
+// Funkcja aktualizująca wyświetlanie statystyk
+function updateStatsDisplay(totalSessions, totalRounds, totalSuccesses, totalFailures, leftClicks, rightClicks, totalWealth) {
+    // Podstawowe wartości
+    document.getElementById('total-sessions').textContent = totalSessions;
+    document.getElementById('total-rounds').textContent = totalRounds;
+    
+    // Sukcesy
+    document.getElementById('success-count').textContent = totalSuccesses;
+    document.getElementById('success-percentage').textContent = `${((totalSuccesses / (totalSuccesses + totalFailures)) * 100).toFixed(1)}%`;
+    
+    // Porażki
+    document.getElementById('failure-count').textContent = totalFailures;
+    document.getElementById('failure-percentage').textContent = `${((totalFailures / (totalSuccesses + totalFailures)) * 100).toFixed(1)}%`;
+    
+    // Różnica
+    const difference = totalSuccesses - totalFailures;
+    const differenceElement = document.getElementById('difference');
+    differenceElement.textContent = difference;
+    differenceElement.className = 'stat-value difference-value ' + (difference >= 0 ? 'positive' : 'negative');
+    
+    // Kliknięcia
+    document.getElementById('left-clicks').textContent = leftClicks;
+    document.getElementById('left-clicks-percentage').textContent = `${((leftClicks / (leftClicks + rightClicks)) * 100).toFixed(1)}%`;
+    
+    document.getElementById('right-clicks').textContent = rightClicks;
+    document.getElementById('right-clicks-percentage').textContent = `${((rightClicks / (leftClicks + rightClicks)) * 100).toFixed(1)}%`;
+    
+    // Skumulowane bogactwo
+    document.getElementById('total-wealth').textContent = `${((totalWealth - 1) * 100).toFixed(1)}%`;
+}
+
+// Funkcja aktualizująca globalne statystyki
+async function updateGlobalStats() {
+    const totalSessions = StatsState.sessions.length;
+    let totalRounds = 0;
+    let totalSuccesses = 0;
+    let totalFailures = 0;
+    let leftClicks = 0;
+    let rightClicks = 0;
+    let totalWealth = 1; // Startujemy od 1 (100%)
+
+    // Najpierw obliczamy sumę rund i wyników
+    StatsState.sessions.forEach(session => {
+        totalRounds += session.round_count;
+        totalSuccesses += session.success_count;
+        totalFailures += session.failure_count;
+        totalWealth *= (1 + session.session_profit_factor);
+    });
+
+    // Teraz pobieramy rundy dla każdej sesji
+    const roundPromises = StatsState.sessions.map(session => 
+        fetchWithAuth(`/api/sessions/${session.id}/rounds`).then(response => {
+            if (response.ok) {
+                return response.json();
+            }
+            throw new Error('Błąd pobierania rund');
+        })
+    );
+
+    try {
+        const allRounds = await Promise.all(roundPromises);
+        allRounds.forEach(rounds => {
+            rounds.forEach(round => {
+                if (round.user_choice_side === 'LEFT') {
+                    leftClicks++;
+                } else if (round.user_choice_side === 'RIGHT') {
+                    rightClicks++;
+                }
+            });
+        });
+
+        // Aktualizujemy wszystkie statystyki
+        updateStatsDisplay(totalSessions, totalRounds, totalSuccesses, totalFailures, leftClicks, rightClicks, totalWealth);
+    } catch (error) {
+        console.error('Błąd podczas pobierania rund:', error);
+        // W przypadku błędu nadal wyświetlamy podstawowe statystyki
+        updateStatsDisplay(totalSessions, totalRounds, totalSuccesses, totalFailures, leftClicks, rightClicks, totalWealth);
+    }
 }
 
 // Ładowanie rankingu globalnego obrazów

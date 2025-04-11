@@ -3,9 +3,10 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from ..database import get_db
-from ..models import User, Session as SessionModel
+from ..models import User, Session as SessionModel, Round
 from .. import schemas
 from ..auth import get_current_user
+from ..schemas import RoundResultEnum
 
 router = APIRouter()
 
@@ -21,34 +22,32 @@ def get_user_sessions(
     # Przygotuj szczegółowe podsumowania sesji
     session_summaries = []
     for session in sessions:
-        success_count = db.query(SessionModel.id).filter(
-            SessionModel.id == session.id
-        ).join(
-            SessionModel.rounds
-        ).filter(
-            schemas.Round.result == "SUCCESS"
+        # Oblicz liczbę sukcesów i porażek
+        success_count = db.query(Round).filter(
+            Round.session_id == session.id,
+            Round.result == RoundResultEnum.SUCCESS.value
         ).count()
         
-        failure_count = db.query(SessionModel.id).filter(
-            SessionModel.id == session.id
-        ).join(
-            SessionModel.rounds
-        ).filter(
-            schemas.Round.result == "FAILURE"
+        failure_count = db.query(Round).filter(
+            Round.session_id == session.id,
+            Round.result == RoundResultEnum.FAILURE.value
         ).count()
         
         round_count = success_count + failure_count
         
-        session_summaries.append({
-            "id": session.id,
-            "status": session.status,
-            "started_at": session.created_at,
-            "session_profit_factor": session.session_profit_factor,
-            "remaining_pairs": session.remaining_pairs,
-            "success_count": success_count,
-            "failure_count": failure_count,
-            "round_count": round_count
-        })
+        # Użyj SessionResponse jako podstawy
+        session_summary = schemas.SessionSummary(
+            id=session.id,
+            status=session.status,
+            started_at=session.started_at,
+            session_profit_factor=session.session_profit_factor,
+            remaining_pairs=session.remaining_pairs,
+            success_count=success_count,
+            failure_count=failure_count,
+            round_count=round_count
+        )
+        
+        session_summaries.append(session_summary)
     
     return session_summaries
 
@@ -85,7 +84,7 @@ def get_user_profile(
     ).join(
         SessionModel.rounds
     ).filter(
-        schemas.Round.result == "SUCCESS"
+        SessionModel.rounds.any(Round.result == RoundResultEnum.SUCCESS.value)
     ).count()
     
     failure_count = round_count - success_count
