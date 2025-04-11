@@ -638,10 +638,9 @@ a:hover {
     max-width: 600px;
 }
 
-.result-actions {
+.result-footer {
     display: flex;
     flex-direction: row;
-    justify-content: space-between;
     align-items: center;
     width: 100%;
     max-width: 600px;
@@ -654,19 +653,22 @@ a:hover {
     font-weight: bold;
     padding: 12px 24px;
     border-radius: var(--border-radius);
-    min-width: 200px;
+    width: 25%;  /* 1/4 szerokości strony */
     text-align: left;
     margin-left: 0;
+    min-width: 200px;
+}
+
+.button-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-left: auto;
+    gap: var(--spacing-md);
 }
 
 #next-round-button {
     width: 200px;
-    margin: 0 auto;
-}
-
-.button-container {
-    width: 100%;
-    text-align: center;
 }
 
 /* Przycisk mniejszy */
