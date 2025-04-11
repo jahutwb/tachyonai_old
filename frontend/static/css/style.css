@@ -638,7 +638,7 @@ a:hover {
     max-width: 600px;
 }
 
-.result-footer {
+.result-actions {
     display: flex;
     flex-direction: row;
     align-items: center;
@@ -660,17 +660,10 @@ a:hover {
     min-width: 200px;
 }
 
-.button-container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--spacing-md);
-    margin-left: auto;
-    margin-right: auto;
-}
-
 #next-round-button {
     width: 200px;
+    margin: 0 auto;
+    display: block;
 }
 
 /* Przycisk mniejszy */
@@ -875,12 +868,6 @@ a:hover {
 @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
-}
-
-#next-round-button {
-    margin: 20px auto;
-    display: block;
-    width: 200px;
 }
 
 /* Stimulus container */
