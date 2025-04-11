@@ -12,7 +12,7 @@ from ..auth import get_current_user
 from ..schemas import SessionResponse
 from ..genetic_pool import generate_pool_with_genetic_algorithm, get_random_pool
 from ..embedding import find_nearest_image
-from ..pool_image_item import PoolImageItem  # 
+from ..pool_image_item import PoolImageItem  # 👈 Zmiana: import klasy PoolImageItem
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -460,7 +460,7 @@ def get_session_summary(
                 {
                     "id": id_,
                     "successes": item.successes,
-                    "failures": 0,  # Zawsze 0, bo nie chcemy pokazywać porażek
+                    "failures": item.failures,
                     "cumulative_factor": cumulative.get(id_, 1.0),
                     "origin": item.origin,
                     "parent": item.parent if item.origin == "child" else None

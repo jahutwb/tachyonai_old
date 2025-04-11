@@ -216,7 +216,7 @@ function updatePositiveRanking() {
     const rankingContainer = document.getElementById('positive-stimulus-ranking');
     rankingContainer.innerHTML = '';
     
-    const positivePool = SummaryState.sessionData.pos_pool_json || [];
+    const positivePool = SummaryState.sessionData.positive_stimuli || [];
     
     if (positivePool.length === 0) {
         rankingContainer.innerHTML = '<p>Brak danych o bodźcach pozytywnych.</p>';
@@ -237,22 +237,31 @@ function updatePositiveRanking() {
     // Stwórz elementy rankingu
     successfulStimuli.forEach((stimulus, index) => {
         const stimulusElement = document.createElement('div');
-        stimulusElement.className = 'stimulus-card';
+        stimulusElement.className = 'stimulus-rank-item';
         
         stimulusElement.innerHTML = `
-            <div class="stimulus-image">
+            <div class="stimulus-rank-number">${index + 1}</div>
+            <div class="stimulus-rank-image">
                 <img src="/api/images/${stimulus.id}/thumbnail" alt="Bodziec #${stimulus.id}">
             </div>
-            <div class="stimulus-details">
+            <div class="stimulus-rank-details">
                 <div class="stimulus-id">ID: ${stimulus.id}</div>
-                <div class="stimulus-success">Sukcesy w sesji: ${stimulus.successes}</div>
-                <div class="stimulus-profit">Zysk: ${(stimulus.cumulative_factor - 1) * 100} %</div>
+                <div class="stimulus-success-count">Sukcesów: ${stimulus.successes}</div>
                 <div class="stimulus-origin">Pochodzenie: ${translateOrigin(stimulus.origin)}</div>
-                ${stimulus.origin === 'child' && stimulus.parent ? `
-                    <div class="stimulus-parent">Rodzic: #${stimulus.parent}</div>
-                ` : ''}
             </div>
         `;
+        
+        if (stimulus.origin === 'child' && stimulus.parent) {
+            const parentLink = document.createElement('div');
+            parentLink.className = 'stimulus-parent-link';
+            parentLink.innerHTML = `Rodzic: #${stimulus.parent}`;
+            parentLink.addEventListener('click', () => {
+                // Tutaj można by dodać akcję pokazującą obrazek rodzica
+                alert(`Obrazek rodzica #${stimulus.parent}`);
+            });
+            
+            stimulusElement.querySelector('.stimulus-rank-details').appendChild(parentLink);
+        }
         
         rankingContainer.appendChild(stimulusElement);
     });
@@ -405,16 +414,6 @@ document.addEventListener('DOMContentLoaded', async function() {
 async function loadSessionSummary(sessionId) {
     try {
         showLoading('Ładowanie podsumowania sesji...');
-        
-        // Pobierz ID sesji z URL
-        const urlParams = new URLSearchParams(window.location.search);
-        const sessionId = urlParams.get('session_id');
-        
-        if (!sessionId) {
-            alert('Nieprawidłowy identyfikator sesji.');
-            window.location.href = '/';
-            return;
-        }
         
         // Pobieranie danych sesji
         const sessionResponse = await fetch(`/api/sessions/${sessionId}`, {
@@ -671,13 +670,10 @@ function renderStimuliRanking(ranking, type) {
                 </div>
                 <div class="stimulus-details">
                     <div class="stimulus-id">ID: ${stimulus.id}</div>
-                    <div class="stimulus-success">Sukcesów w sesji: ${stimulus.successes}</div>
-                    <div class="stimulus-failure">Porażki w sesji: ${stimulus.failures}</div>
-                    <div class="stimulus-profit">Zysk: ${profit}%</div>
+                    <div class="stimulus-success">Sukcesy w sesji: ${stimulus.successes || 0}</div>
+                    <div class="stimulus-failure">Porażki w sesji: ${stimulus.failures || 0}</div>
                     <div>Pochodzenie: ${originLabel}</div>
-                    ${stimulus.origin === 'child' && stimulus.parent ? `
-                        <div class="stimulus-parent">Rodzic: #${stimulus.parent}</div>
-                    ` : ''}
+                    <div class="stimulus-profit">Zysk: ${profit}%</div>
                 </div>
             </div>
         `;
