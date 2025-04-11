@@ -626,17 +626,19 @@ a:hover {
     flex-direction: column;
     align-items: center;
     gap: var(--spacing-lg);
+    width: 100%;
+    max-width: 600px;
+    margin: 0 auto;
 }
 
 .result-actions {
     display: flex;
     flex-direction: row;
     align-items: center;
-    justify-content: space-between;
     width: 100%;
     max-width: 600px;
-    margin: 0 auto;
     padding: var(--spacing-md);
+    position: relative;
 }
 
 .result-status {
@@ -649,12 +651,14 @@ a:hover {
     min-width: 200px;
     max-width: 300px;
     display: inline-block;
+    position: absolute;
+    left: 0;
 }
 
 #next-round-button {
     width: 200px;
-    margin: 0;
-    display: inline-block;
+    margin: 0 auto;
+    display: block;
 }
 
 /* Przycisk mniejszy */
