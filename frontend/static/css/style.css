@@ -691,9 +691,8 @@ a:hover {
     gap: var(--spacing-sm);
     margin: 0;
     padding: 0;
-    position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
+    flex: 1;
+    justify-content: center;
 }
 
 /* Przycisk mniejszy */
