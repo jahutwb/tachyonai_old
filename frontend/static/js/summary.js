@@ -245,7 +245,8 @@ function updatePositiveRanking() {
             </div>
             <div class="stimulus-details">
                 <div class="stimulus-id">ID: ${stimulus.id}</div>
-                <div class="stimulus-success">Sukcesów: ${stimulus.successes}</div>
+                <div class="stimulus-success">Sukcesy w sesji: ${stimulus.successes}</div>
+                <div class="stimulus-profit">Zysk: ${(stimulus.cumulative_factor - 1) * 100} %</div>
                 <div class="stimulus-origin">Pochodzenie: ${translateOrigin(stimulus.origin)}</div>
                 ${stimulus.origin === 'child' && stimulus.parent ? `
                     <div class="stimulus-parent">Rodzic: #${stimulus.parent}</div>
@@ -670,10 +671,13 @@ function renderStimuliRanking(ranking, type) {
                 </div>
                 <div class="stimulus-details">
                     <div class="stimulus-id">ID: ${stimulus.id}</div>
-                    <div class="stimulus-success">Sukcesy w sesji: ${stimulus.successes || 0}</div>
-                    <div class="stimulus-failure">Porażki w sesji: ${stimulus.failures || 0}</div>
-                    <div>Pochodzenie: ${originLabel}</div>
+                    <div class="stimulus-success">Sukcesów w sesji: ${stimulus.successes}</div>
+                    <div class="stimulus-failure">Porażki w sesji: ${stimulus.failures}</div>
                     <div class="stimulus-profit">Zysk: ${profit}%</div>
+                    <div>Pochodzenie: ${originLabel}</div>
+                    ${stimulus.origin === 'child' && stimulus.parent ? `
+                        <div class="stimulus-parent">Rodzic: #${stimulus.parent}</div>
+                    ` : ''}
                 </div>
             </div>
         `;
