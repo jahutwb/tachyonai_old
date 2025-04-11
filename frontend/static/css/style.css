@@ -646,6 +646,7 @@ a:hover {
     max-width: 600px;
     margin: 0 auto;
     padding: var(--spacing-md);
+    justify-content: space-between;
 }
 
 .result-status {
@@ -663,8 +664,9 @@ a:hover {
     display: flex;
     flex-direction: column;
     align-items: center;
-    margin-left: auto;
     gap: var(--spacing-md);
+    margin-left: auto;
+    margin-right: auto;
 }
 
 #next-round-button {
