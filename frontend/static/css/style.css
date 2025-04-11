@@ -603,6 +603,7 @@ a:hover {
     padding: 4px 8px;
     border-radius: var(--border-radius);
     font-weight: bold;
+    width: auto;
 }
 
 .positive {
@@ -634,14 +635,15 @@ a:hover {
     flex-direction: column;
     align-items: center;
     gap: var(--spacing-lg);
-    width: 100%;
-    max-width: 600px;
+    width: auto;
 }
 
 .result-actions {
     display: flex;
     flex-direction: row;
     align-items: center;
+    justify-content: space-between;
+    width: auto;
     margin: 0 auto;
     padding: var(--spacing-md);
 }
@@ -653,7 +655,6 @@ a:hover {
     border-radius: var(--border-radius);
     text-align: left;
     margin-left: 0;
-    display: inline-block;
     width: auto;
 }
 
