@@ -12,7 +12,7 @@ from ..auth import get_current_user
 from ..schemas import SessionResponse
 from ..genetic_pool import generate_pool_with_genetic_algorithm, get_random_pool
 from ..embedding import find_nearest_image
-from ..pool_image_item import PoolImageItem  # 👈 Zmiana: import klasy PoolImageItem
+from ..pool_image_item import PoolImageItem  # 
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -439,8 +439,8 @@ def get_session_summary(
             )
 
         rounds = db.query(Round).filter(Round.session_id == session_id).all()
-        success_count = sum(r.result == "SUCCESS" for r in rounds)
-        failure_count = sum(r.result == "FAILURE" for r in rounds)
+        success_count = sum(1 for r in rounds if r.result == "SUCCESS")
+        failure_count = sum(1 for r in rounds if r.result == "FAILURE")
 
         pos_items = {item["id"]: PoolImageItem.from_dict(item) for item in (session.pos_pool_json or [])}
         neg_items = {item["id"]: PoolImageItem.from_dict(item) for item in (session.neg_pool_json or [])}
@@ -450,24 +450,17 @@ def get_session_summary(
 
         for r in rounds:
             if r.result == "SUCCESS":
-                if r.pos_image_id in pos_items:
-                    pos_items[r.pos_image_id].successes += 1
+                if r.pos_image_id in pos_cumulative:
                     pos_cumulative[r.pos_image_id] *= (1 + r.profit_fraction)
-                if r.neg_image_id in neg_items:
-                    neg_items[r.neg_image_id].successes += 1
+                if r.neg_image_id in neg_cumulative:
                     neg_cumulative[r.neg_image_id] *= (1 + r.profit_fraction)
-            elif r.result == "FAILURE":
-                if r.pos_image_id in pos_items:
-                    pos_items[r.pos_image_id].failures += 1
-                if r.neg_image_id in neg_items:
-                    neg_items[r.neg_image_id].failures += 1
 
-        def build_ranking(items: dict, cumulative: dict):
+        def build_ranking(items: dict[int, PoolImageItem], cumulative: dict[int, float]):
             return sorted([
                 {
                     "id": id_,
                     "successes": item.successes,
-                    "failures": item.failures,
+                    "failures": 0,  # Zawsze 0, bo nie chcemy pokazywać porażek
                     "cumulative_factor": cumulative.get(id_, 1.0),
                     "origin": item.origin,
                     "parent": item.parent if item.origin == "child" else None

@@ -87,6 +87,8 @@ def generate_children_by_combination(
                 image = db.query(ImageModel).filter(ImageModel.id == nearest_id).first()
                 if image:
                     child = PoolImageItem.from_parents(id=image.id, parent_ids=[id1, id2])
+                    child.successes = 0
+                    child.failures = 0
                     children.append(child)
                     exclude_ids.add(image.id)
                     logger.info(f"✓ Dodano dziecko {image.id} z pary ({id1}, {id2}), distance={distance:.4f}")
@@ -131,7 +133,7 @@ def get_random_images_as_pool_items(db: Session, count: int, is_positive: bool, 
         q = q.filter(~ImageModel.id.in_(exclude_ids))
     images = q.order_by(func.random()).limit(count).all()
     logger.info(f"Pobrano {len(images)} losowych obrazów (is_positive={is_positive})")
-    return [PoolImageItem(id=img.id, origin="random", successes=0, failures=0) for img in images]
+    return [PoolImageItem(id=img.id) for img in images]
 
 
 def process_pool_generation(
@@ -160,7 +162,7 @@ def process_pool_generation(
         logger.info("Przypadek A: więcej sukcesów niż par.")
         points = total_successes - num_pairs
         for item in sorted(successful_items, key=lambda i: i.successes, reverse=True):
-            new_pool.append(PoolImageItem(id=item.id, origin="bought"))
+            new_pool.append(PoolImageItem(id=item.id, origin="bought", successes=0, failures=0))
             exclude_ids.add(item.id)
             points -= item.successes
             if points <= 0 or len(new_pool) >= num_pairs:
