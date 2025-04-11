@@ -647,7 +647,6 @@ a:hover {
     max-width: 600px;
     margin: 0 auto;
     padding: var(--spacing-md);
-    gap: var(--spacing-md);
 }
 
 .result-status {
@@ -656,11 +655,13 @@ a:hover {
     padding: 12px 24px;
     border-radius: var(--border-radius);
     min-width: 200px;
-    text-align: center;
+    text-align: left;
+    margin-left: 0;
 }
 
 #next-round-button {
     width: 200px;
+    margin: 0 auto;
 }
 
 .button-container {

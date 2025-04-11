@@ -371,11 +371,12 @@ class UIController {
   /**
    * Wyświetla wynik i bodziec
    */
-  static displayResult(result, stimulusUrl, percentChange) {
+  static displayResult(result, stimulusUrl, profitFraction) {
     // Ustawienie statusu wyniku
     const resultStatus = document.querySelector(DOM.RESULT_STATUS);
     if (resultStatus) {
-        const profitPercent = (percentChange * 100).toFixed(2);
+        // Konwertujemy profit_fraction na procent
+        const profitPercent = (profitFraction * 100).toFixed(2);
         const profitSign = profitPercent >= 0 ? '+' : '';
         resultStatus.textContent = `${result === 'SUCCESS' ? 'Sukces' : 'Porażka'}: ${profitSign}${profitPercent}%`;
         resultStatus.className = result === 'SUCCESS' ? 'success' : 'failure';
@@ -1078,14 +1079,14 @@ class GameController {
       // Oblicz procentową zmianę ceny
       const startPrice = this.data.prices.startPrice;
       const endPrice = this.data.prices.endPrice;
-      const percentChange = ((endPrice - startPrice) / startPrice) * 100;
+      const profitFraction = (endPrice - startPrice) / startPrice;
       
       // Wyświetl fazę wyniku z odpowiednio formatowanym komunikatem
       UIController.prepareResultPhase();
       UIController.displayResult(
         result.result,
         result.stimulus_url,
-        percentChange
+        profitFraction
       );
     } catch (error) {
       Logger.error('Błąd podczas wyświetlania wyniku', error);
