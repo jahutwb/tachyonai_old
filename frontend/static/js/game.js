@@ -44,7 +44,6 @@ const DOM = {
   
   // Wyniki
   RESULT_STATUS: '#result-status',
-  PROFIT_CHANGE: '#profit-change',
   STIMULUS_IMAGE: '#stimulus-image',
   
   // Przyciski
@@ -376,35 +375,25 @@ class UIController {
     // Ustawienie statusu wyniku
     const resultStatus = document.querySelector(DOM.RESULT_STATUS);
     if (resultStatus) {
-      const profitPercent = (percentChange * 100).toFixed(2);
-      const profitSign = profitPercent >= 0 ? '+' : '';
-      resultStatus.textContent = `${result === 'SUCCESS' ? 'Sukces' : 'Porażka'}: ${profitSign}${profitPercent}%`;
-      resultStatus.className = result === 'SUCCESS' ? 'result-status success' : 'result-status failure';
+        const profitPercent = (percentChange * 100).toFixed(2);
+        const profitSign = profitPercent >= 0 ? '+' : '';
+        resultStatus.textContent = `${result === 'SUCCESS' ? 'Sukces' : 'Porażka'}: ${profitSign}${profitPercent}%`;
+        resultStatus.className = result === 'SUCCESS' ? 'success' : 'failure';
     }
-    
-    // Wyświetlenie zmiany procentowej
-    const profitChange = document.querySelector(DOM.PROFIT_CHANGE);
-    if (profitChange) {
-      profitChange.textContent = `Zmiana ceny: ${percentChange.toFixed(2)}%`;
-    }
-    
+
     // Wyświetlenie obrazu bodźca
     const stimulusImage = document.querySelector(DOM.STIMULUS_IMAGE);
     if (stimulusImage && stimulusUrl) {
-      stimulusImage.style.display = 'block';
-      stimulusImage.src = stimulusUrl;
-      
-      stimulusImage.onerror = () => {
-        Logger.error('Błąd ładowania obrazu bodźca');
-        stimulusImage.alt = 'Błąd ładowania obrazu';
-        stimulusImage.style.display = 'none';
-      };
-      
-      stimulusImage.onload = () => {
-        Logger.log('Obraz bodźca załadowany pomyślnie');
-      };
-    } else if (stimulusImage) {
-      stimulusImage.style.display = 'none';
+        stimulusImage.style.display = 'block';
+        stimulusImage.src = stimulusUrl;
+        
+        stimulusImage.onerror = function() {
+            Logger.error('Błąd ładowania obrazu bodźca', { url: stimulusUrl });
+            stimulusImage.src = '/static/images/default-stimulus.png';
+        };
+        stimulusImage.onload = function() {
+            Logger.info('Obraz bodźca załadowany', { url: stimulusUrl });
+        };
     }
   }
   
