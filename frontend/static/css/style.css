@@ -642,11 +642,8 @@ a:hover {
     display: flex;
     flex-direction: row;
     align-items: center;
-    width: 100%;
-    max-width: 600px;
     margin: 0 auto;
     padding: var(--spacing-md);
-    justify-content: space-between;
 }
 
 .result-status {
@@ -654,16 +651,16 @@ a:hover {
     font-weight: bold;
     padding: 12px 24px;
     border-radius: var(--border-radius);
-    width: 25%;  /* 1/4 szerokości strony */
     text-align: left;
     margin-left: 0;
-    min-width: 200px;
+    display: inline-block;
+    width: auto;
 }
 
 #next-round-button {
     width: 200px;
     margin: 0 auto;
-    display: block;
+    display: inline-block;
 }
 
 /* Przycisk mniejszy */
