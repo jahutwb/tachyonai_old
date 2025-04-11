@@ -131,7 +131,7 @@ def get_random_images_as_pool_items(db: Session, count: int, is_positive: bool, 
         q = q.filter(~ImageModel.id.in_(exclude_ids))
     images = q.order_by(func.random()).limit(count).all()
     logger.info(f"Pobrano {len(images)} losowych obrazów (is_positive={is_positive})")
-    return [PoolImageItem(id=img.id) for img in images]
+    return [PoolImageItem(id=img.id, origin="random", successes=0, failures=0) for img in images]
 
 
 def process_pool_generation(
