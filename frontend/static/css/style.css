@@ -665,6 +665,7 @@ a:hover {
     display: flex;
     flex-direction: row;
     align-items: center;
+    justify-content: space-between;
     width: 100%;
     max-width: 1200px;
     gap: var(--spacing-md);
@@ -690,6 +691,9 @@ a:hover {
     gap: var(--spacing-sm);
     margin: 0;
     padding: 0;
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
 }
 
 /* Przycisk mniejszy */
