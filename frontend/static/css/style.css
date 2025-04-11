@@ -867,22 +867,18 @@ a:hover {
 
 /* Stimulus container */
 .stimulus-container {
-    margin: var(--spacing-lg) 0;
-    max-width: 90%;
-    height: 70vh;
-    max-height: 70vh;
-    overflow: hidden;
-    border-radius: var(--border-radius);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
     display: flex;
     justify-content: center;
     align-items: center;
+    width: 100%;
+    height: 100%;
+    max-height: 80vh;  /* Ograniczenie maksymalnej wysokości do 80% viewportu */
+    margin-bottom: var(--spacing-md);
 }
 
 .stimulus-image {
-    width: 100%;
-    height: 100%;
+    max-height: 100%;
+    width: auto;
     display: block;
-    margin: 0 auto;
     object-fit: contain;
 }
