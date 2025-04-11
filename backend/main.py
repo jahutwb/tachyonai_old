@@ -37,7 +37,7 @@ logger.info("Konfiguracja loggera zakończona")
 
 # Dodatkowa konfiguracja loggerów
 logging.getLogger("uvicorn").setLevel(logging.INFO)
-logging.getLogger("sqlalchemy.engine").setLevel(logging.INFO)
+logging.getLogger("sqlalchemy.engine").setLevel(logging.ERROR)  # Wyłączenie logowania SQLAlchemy
 
 # Logowanie uruchomienia aplikacji
 logger.info("Aplikacja uruchomiona")
@@ -49,15 +49,6 @@ init_db()
 logger.info("Inicjalizacja menedżera indeksów FAISS")
 faiss_manager = get_faiss_index_manager()
 logger.info("Menedżer indeksów FAISS zainicjalizowany")
-
-# Zbuduj indeksy przy starcie aplikacji
-try:
-    logger.info("Rozpoczynam budowę indeksów FAISS")
-    faiss_manager.rebuild_all_indexes()
-    logger.info("Indeksy FAISS zbudowane pomyślnie")
-except Exception as e:
-    logger.error(f"Błąd podczas budowania indeksów FAISS: {str(e)}")
-    logger.error(traceback.format_exc())
 
 # Tworzenie aplikacji FastAPI
 app = FastAPI(title="TachyonAI", version="0.1.0")
@@ -177,4 +168,4 @@ async def ping():
 # Uruchomienie serwera gdy skrypt jest wywoływany bezpośrednio
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000) 
+    uvicorn.run("backend.main:app", host="127.0.0.1", port=8000, reload=True)

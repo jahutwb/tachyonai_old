@@ -875,7 +875,6 @@ async function triggerPoolGeneration(sessionId) {
 async function displayPoolStatistics(sessionId) {
     try {
         console.log('Pobieram statystyki nowej puli...');
-        // Pobieramy dane z /pool-info zamiast /pool-statistics
         const response = await fetchWithAuth(`/api/sessions/${sessionId}/pool-info`);
         const data = await response.json();
 
@@ -887,38 +886,48 @@ async function displayPoolStatistics(sessionId) {
             statsContainer.id = 'pool-stats-container';
             statsContainer.className = 'pool-stats-box';
             
+            // Usuń poprzedni container statystyk, jeśli istnieje
+            const existingContainer = document.getElementById('pool-stats-container');
+            if (existingContainer) {
+                existingContainer.remove();
+            }
+            
             // Używamy danych z pool_stats
             const posStats = data.pool_stats.pos_pool;
             const negStats = data.pool_stats.neg_pool;
             
             const statsHTML = `
-                <div class="pool-stats-header">
+                <div class="pool-stats-info">
                     <h3>Statystyki Nowej Puli</h3>
+                    <p>Algorytm genetyczny wygenerował nową pulę obrazów</p>
                 </div>
-                <div class="pool-stats-columns">
-                    <div class="pool-stats-column">
-                        <h5>Bodźce pozytywne (${posStats.total}):</h5>
-                        <ul>
-                            <li>Kupione: ${posStats.bought}</li>
-                            <li>Wygenerowane: ${posStats.children}</li>
-                            <li>Losowe: ${posStats.random}</li>
-                            <li>Losowe (fallback): ${posStats.random_fallback}</li>
-                        </ul>
-                    </div>
-                    <div class="pool-stats-column">
-                        <h5>Bodźce negatywne (${negStats.total}):</h5>
-                        <ul>
-                            <li>Kupione: ${negStats.bought}</li>
-                            <li>Wygenerowane: ${negStats.children}</li>
-                            <li>Losowe: ${negStats.random}</li>
-                            <li>Losowe (fallback): ${negStats.random_fallback}</li>
-                        </ul>
-                    </div>
-                </div>
-                <div class="pool-stats-message">
-                    <p>Ta pula została wygenerowana przy użyciu algorytmu genetycznego na podstawie statystyk poprzedniej sesji.</p>
-                    <p>Obrazy zostały wybrane lub wygenerowane w oparciu o historię sukcesów.</p>
-                </div>
+                <table class="pool-stats-table">
+                    <tr>
+                        <th></th>
+                        <th>Bodźce pozytywne (${posStats.total})</th>
+                        <th>Bodźce negatywne (${negStats.total})</th>
+                    </tr>
+                    <tr>
+                        <th>Kupione</th>
+                        <td>${posStats.bought}</td>
+                        <td>${negStats.bought}</td>
+                    </tr>
+                    <tr>
+                        <th>Wygenerowane</th>
+                        <td>${posStats.children}</td>
+                        <td>${negStats.children}</td>
+                    </tr>
+                    <tr>
+                        <th>Losowe</th>
+                        <td>${posStats.random}</td>
+                        <td>${negStats.random}</td>
+                    </tr>
+                    <tr>
+                        <th>Losowe (fallback)</th>
+                        <td>${posStats.random_fallback}</td>
+                        <td>${negStats.random_fallback}</td>
+                    </tr>
+                </table>
             `;
             
             statsContainer.innerHTML = statsHTML;

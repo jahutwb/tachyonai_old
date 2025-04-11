@@ -13,7 +13,7 @@ from ..models import User, Session as SessionModel, Round, Image
 from .. import schemas
 from ..auth import get_current_user
 from ..schemas import SessionResponse
-from ..genetic_pool import generate_pool_with_genetic_algorithm, get_random_pool, calculate_centroid, PoolImageItem
+from ..genetic_pool import generate_pool_with_genetic_algorithm, get_random_pool, PoolImageItem
 from ..embedding import find_nearest_image
 
 router = APIRouter()
@@ -855,4 +855,3 @@ def trigger_pool_generation(
     except Exception as e:
         logger.error(f"Błąd podczas triggerowania generowania puli: {str(e)}")
         logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=str(e))

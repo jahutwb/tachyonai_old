@@ -22,8 +22,6 @@ from ..models import Image as ImageModel, ImageTypeEnum
 from .. import models
 from ..faiss_manager import get_faiss_index_manager
 
-faiss_manager = get_faiss_index_manager()
-
 # Konfiguracja loggera
 logger = logging.getLogger(__name__)
 
@@ -37,6 +35,7 @@ def get_logger(name):
 # Globalne zmienne dla CLIP i indeksu FAISS
 clip_model = None
 clip_preprocess = None
+faiss_manager = None
 faiss_index_pos = None
 faiss_index_neg = None
 image_ids_pos = []
@@ -45,6 +44,33 @@ image_ids_neg = []
 # Maksymalna liczba obrazów każdego typu
 MAX_POSITIVE_IMAGES = 2000
 MAX_NEGATIVE_IMAGES = 2000
+
+
+def _initialize_faiss_manager():
+    """
+    Inicjalizuje FAISS Manager przy pierwszym użyciu
+    """
+    global faiss_manager
+    if faiss_manager is None:
+        try:
+            faiss_manager = get_faiss_index_manager()
+            if faiss_manager is None:
+                logger.error("Nie udało się zainicjalizować FAISS Managera")
+        except Exception as e:
+            logger.error(f"Błąd podczas inicjalizacji FAISS Managera: {str(e)}")
+            logger.error(traceback.format_exc())
+            faiss_manager = None
+
+
+def get_faiss_index(image_type: ImageTypeEnum):
+    """
+    Pobiera indeks FAISS dla danego typu obrazu
+    """
+    _initialize_faiss_manager()
+    if faiss_manager is None:
+        return None, {}, {}
+    
+    return faiss_manager.get_index(image_type)
 
 
 def load_clip_model() -> None:
@@ -414,36 +440,15 @@ def get_image_embeddings(db: Session, image_ids: List[int]) -> Dict[int, List[fl
     return result
 
 
-def find_nearest_image(db: Session, embedding: List[float]) -> Tuple[Optional[Dict[str, Any]], Optional[float]]:
+def find_nearest_image(db: Session, image_type: ImageTypeEnum, embedding: List[float]) -> Tuple[Optional[Dict[str, Any]], Optional[float]]:
     """
     Znajduje obraz najbliższy do podanego embeddingu.
-    
-    Args:
-        db: Sesja bazy danych
-        embedding: Embedding źródłowy
-        
-    Returns:
-        Krotka zawierająca:
-        - Słownik z informacjami o najbliższym obrazie lub None
-        - Odległość do najbliższego obrazu lub None
     """
     try:
         # Użyj FAISS Managera do znalezienia najbliższego obrazu
-        faiss_manager = get_faiss_index_manager()
+        index, id_to_index, index_to_id = get_faiss_index(image_type)
         
-        # Sprawdź typ obrazu (pozytywny/negatywny)
-        image_type = ImageTypeEnum.POSITIVE  # Domyślnie szukamy pozytywnego obrazu
-        
-        # Sprawdź, czy FAISS Manager jest zainicjalizowany
-        if not faiss_manager._initialize():
-            logger.error("Nie udało się zainicjalizować FAISS Managera")
-            return None, None
-            
-        # Pobierz indeks FAISS dla danego typu
-        index, id_to_index, index_to_id = faiss_manager.get_index(image_type)
-        
-        if not index or not id_to_index or not index_to_id:
-            logger.error("Nie udało się uzyskać indeksu FAISS")
+        if index is None:
             return None, None
             
         # Znajdź najbliższy obraz
