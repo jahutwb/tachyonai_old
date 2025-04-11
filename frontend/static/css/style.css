@@ -638,9 +638,16 @@ a:hover {
     max-width: 600px;
 }
 
-.result-status-container {
+.result-actions {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
     width: 100%;
-    text-align: center;
+    max-width: 600px;
+    margin: 0 auto;
+    padding: var(--spacing-md);
+    gap: var(--spacing-md);
 }
 
 .result-status {
@@ -648,20 +655,17 @@ a:hover {
     font-weight: bold;
     padding: 12px 24px;
     border-radius: var(--border-radius);
-    width: 100%;
-    max-width: 400px;
-    margin: 0 auto;
+    min-width: 200px;
+    text-align: center;
+}
+
+#next-round-button {
+    width: 200px;
 }
 
 .button-container {
     width: 100%;
     text-align: center;
-}
-
-#next-round-button {
-    display: block;
-    margin: 0 auto;
-    width: 200px;
 }
 
 /* Przycisk mniejszy */
