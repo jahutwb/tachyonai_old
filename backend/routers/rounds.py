@@ -109,6 +109,7 @@ def get_next_round(
                 raise HTTPException(status_code=500, detail="Nieprawidłowe referencje obrazów w puli")
             
             logger.info(f"Wybrano obrazy z puli (failures=0): pos_id={pos_image.id}, neg_id={neg_image.id}")
+            logger.info(f"Ścieżki obrazów: pos_path={pos_image.path}, neg_path={neg_image.path}")
             
         except HTTPException:
             raise
@@ -341,6 +342,10 @@ def submit_round_choice(
         # Stwórz pełny URL
         host_url = "http://127.0.0.1:8000"  # Można pobrać z konfiguracji lub zmiennych środowiskowych
         stimulus_url = f"{host_url}/api/images/{stimulus_id}?token={access_token}" if stimulus else None
+        
+        # Dodajemy logowanie ścieżki bodźca
+        if stimulus:
+            logger.info(f"Wyświetlony bodziec: {stimulus.path}")
         
         return {
             "round_id": round_obj.id,
