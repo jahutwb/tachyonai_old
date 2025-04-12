@@ -386,6 +386,12 @@ class UIController {
     const stimulusImage = document.querySelector(DOM.STIMULUS_IMAGE);
     if (stimulusImage && stimulusUrl) {
         stimulusImage.style.display = 'block';
+        
+        // Upewnij się, że używamy /full zamiast /thumbnail dla większych obrazów
+        if (!stimulusUrl.includes('/full')) {
+            stimulusUrl = stimulusUrl.replace('/thumbnail', '/full');
+        }
+        
         stimulusImage.src = stimulusUrl;
         
         console.log('[Debug] URL obrazu bodźca:', stimulusUrl);

@@ -649,29 +649,36 @@ a:hover {
     align-items: center;
     width: 100%;
     max-width: 100%;
-    height: auto;
-    min-height: 400px;
+    height: 80vh;
+    min-height: 80vh;
     max-height: 80vh;
     margin: 0 auto;
-    padding: var(--spacing-md);
-    overflow: hidden;
+    padding: 0;
+    overflow: auto;
+    position: relative;
 }
 
+/* Resetujemy ogólne style dla obrazu stimulus-image */
 .stimulus-image {
-    max-width: 95%;
-    max-height: 75vh;
     width: auto;
     height: auto;
     display: block;
-    object-fit: contain;
     border-radius: 8px;
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-    transition: transform 0.2s ease;
     cursor: pointer;
 }
 
+/* Style specyficzne tylko dla strony gry */
+.result-container .stimulus-image {
+    min-height: 80vh;
+    min-width: 80%;
+    max-height: none;
+    max-width: none;
+    object-fit: contain;
+}
+
 .stimulus-image:hover {
-    transform: scale(1.02);
+    transform: none;
 }
 
 .result-actions-row {
