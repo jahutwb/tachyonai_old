@@ -42,7 +42,6 @@ async function initStats() {
     try {
         // Pobierz sesje użytkownika
         await loadUserSessions();
-        await updateSessionsList();
         
         // Pobierz ranking globalny obrazów
         await loadGlobalStimuliRanking();
@@ -50,9 +49,8 @@ async function initStats() {
         // Pobierz dane genealogii
         await loadGenealogyData('positive');
         
-        // Generuj wykresy
+        // Generuj wykres bogactwa
         generateTotalWealthChart();
-        generateTimeSuccessChart();
         
         // Aktualizuj globalne statystyki
         updateGlobalStats();
@@ -445,13 +443,22 @@ function updateStatsDisplay(totalSessions, totalRounds, totalSuccesses, totalFai
     document.getElementById('total-sessions').textContent = totalSessions;
     document.getElementById('total-rounds').textContent = totalRounds;
     
+    // Obliczenia z obsługą przypadków brzegowych
+    const totalAttempts = totalSuccesses + totalFailures;
+    const successPercentage = totalAttempts > 0 ? ((totalSuccesses / totalAttempts) * 100).toFixed(1) : "0";
+    const failurePercentage = totalAttempts > 0 ? ((totalFailures / totalAttempts) * 100).toFixed(1) : "0";
+    
+    const totalClicks = leftClicks + rightClicks;
+    const leftPercentage = totalClicks > 0 ? ((leftClicks / totalClicks) * 100).toFixed(1) : "0";
+    const rightPercentage = totalClicks > 0 ? ((rightClicks / totalClicks) * 100).toFixed(1) : "0";
+    
     // Sukcesy
     document.getElementById('success-count').textContent = totalSuccesses;
-    document.getElementById('success-percentage').textContent = `${((totalSuccesses / (totalSuccesses + totalFailures)) * 100).toFixed(1)}%`;
+    document.getElementById('success-percentage').textContent = `${successPercentage}%`;
     
     // Porażki
     document.getElementById('failure-count').textContent = totalFailures;
-    document.getElementById('failure-percentage').textContent = `${((totalFailures / (totalSuccesses + totalFailures)) * 100).toFixed(1)}%`;
+    document.getElementById('failure-percentage').textContent = `${failurePercentage}%`;
     
     // Różnica
     const difference = totalSuccesses - totalFailures;
@@ -461,10 +468,10 @@ function updateStatsDisplay(totalSessions, totalRounds, totalSuccesses, totalFai
     
     // Kliknięcia
     document.getElementById('left-clicks').textContent = leftClicks;
-    document.getElementById('left-clicks-percentage').textContent = `${((leftClicks / (leftClicks + rightClicks)) * 100).toFixed(1)}%`;
+    document.getElementById('left-clicks-percentage').textContent = `${leftPercentage}%`;
     
     document.getElementById('right-clicks').textContent = rightClicks;
-    document.getElementById('right-clicks-percentage').textContent = `${((rightClicks / (leftClicks + rightClicks)) * 100).toFixed(1)}%`;
+    document.getElementById('right-clicks-percentage').textContent = `${rightPercentage}%`;
     
     // Skumulowane bogactwo
     document.getElementById('total-wealth').textContent = `${((totalWealth - 1) * 100).toFixed(1)}%`;
@@ -521,19 +528,30 @@ async function updateGlobalStats() {
 
 // Ładowanie rankingu globalnego obrazów
 async function loadGlobalStimuliRanking() {
-    const response = await fetchWithAuth('/api/images/ranking');
-    
-    if (!response.ok) {
-        throw new Error('Nie można załadować rankingu obrazów');
+    // Pobierz ranking pozytywnych bodźców
+    const positiveResponse = await fetchWithAuth('/api/images/ranking?type=POSITIVE');
+    if (!positiveResponse.ok) {
+        throw new Error('Nie można załadować rankingu pozytywnych obrazów');
     }
+    const positiveRanking = await positiveResponse.json();
     
-    const ranking = await response.json();
-    updateGlobalStimuliRanking(ranking);
+    // Pobierz ranking negatywnych bodźców
+    const negativeResponse = await fetchWithAuth('/api/images/ranking?type=NEGATIVE');
+    if (!negativeResponse.ok) {
+        throw new Error('Nie można załadować rankingu negatywnych obrazów');
+    }
+    const negativeRanking = await negativeResponse.json();
+    
+    // Zaktualizuj oba rankingi
+    updateGlobalStimuliRanking(positiveRanking, 'positive');
+    updateGlobalStimuliRanking(negativeRanking, 'negative');
 }
 
 // Aktualizacja rankingu globalnego obrazów
-function updateGlobalStimuliRanking(ranking) {
-    const rankingContainer = document.getElementById('global-stimulus-ranking');
+function updateGlobalStimuliRanking(ranking, type) {
+    // Wybierz odpowiedni kontener na podstawie typu
+    const containerId = type === 'positive' ? 'positive-stimulus-ranking' : 'negative-stimulus-ranking';
+    const rankingContainer = document.getElementById(containerId);
     rankingContainer.innerHTML = '';
     
     if (!ranking || ranking.length === 0) {
@@ -541,8 +559,8 @@ function updateGlobalStimuliRanking(ranking) {
         return;
     }
     
-    // Ogranicz do 20 najlepszych
-    const topRanking = ranking.slice(0, 20);
+    // Ogranicz do 10 najlepszych
+    const topRanking = ranking.slice(0, 10);
     
     // Stwórz elementy rankingu
     topRanking.forEach((item, index) => {
@@ -550,6 +568,7 @@ function updateGlobalStimuliRanking(ranking) {
         stimulusElement.className = 'stimulus-rank-item';
         
         const profit = ((item.total_profit_factor - 1) * 100).toFixed(2);
+        const profitClass = parseFloat(profit) >= 0 ? 'positive' : 'negative';
         
         stimulusElement.innerHTML = `
             <div class="stimulus-rank-number">${index + 1}</div>
@@ -559,7 +578,7 @@ function updateGlobalStimuliRanking(ranking) {
             <div class="stimulus-rank-details">
                 <div class="stimulus-id">ID: ${item.id}</div>
                 <div class="stimulus-success-count">Sukcesów: ${item.total_successes}</div>
-                <div class="stimulus-profit">Zysk: ${profit}%</div>
+                <div class="stimulus-profit ${profitClass}">Zysk: ${profit}%</div>
             </div>
         `;
         
@@ -671,9 +690,12 @@ function updateGenealogyView(genealogyData, type) {
             <div class="session-info">
                 <span class="session-number">Sesja ${sessions.length - index}</span>
                 <span class="session-date">${formattedDate}</span>
+                <span class="session-id">ID: ${session.id}</span>
             </div>
             <div class="session-stats">
+                <span class="session-rounds">Rund: ${session.round_count}</span>
                 <span class="session-profit ${profitClass}">Zysk: ${profit}%</span>
+                <button class="button small-button view-session-details" data-session-id="${session.id}">Szczegóły</button>
             </div>
         `;
         sessionRow.appendChild(sessionHeader);
@@ -785,6 +807,14 @@ function updateGenealogyView(genealogyData, type) {
     
     // Dodaj widok genealogii do kontenera
     genealogyContainer.appendChild(genealogyView);
+    
+    // Dodaj obsługę przycisków szczegółów
+    document.querySelectorAll('.genealogy-view .view-session-details').forEach(button => {
+        button.addEventListener('click', (event) => {
+            event.stopPropagation(); // Zapobiegaj propagacji kliknięcia do karty
+            openSessionDetails(button.getAttribute('data-session-id'));
+        });
+    });
 }
 
 // Funkcja tworząca kartę bodźca
