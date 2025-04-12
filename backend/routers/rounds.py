@@ -341,7 +341,7 @@ def submit_round_choice(
         
         # Stwórz pełny URL
         host_url = "http://127.0.0.1:8000"  # Można pobrać z konfiguracji lub zmiennych środowiskowych
-        stimulus_url = f"{host_url}/api/images/{stimulus_id}?token={access_token}" if stimulus else None
+        stimulus_url = f"{host_url}/api/images/{stimulus_id}/full?token={access_token}" if stimulus else None
         
         # Dodajemy logowanie ścieżki bodźca
         if stimulus:

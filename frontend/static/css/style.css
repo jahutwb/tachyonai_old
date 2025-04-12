@@ -647,18 +647,31 @@ a:hover {
     display: flex;
     justify-content: center;
     align-items: center;
-    width: fit-content;
-    height: 80vh;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    min-height: 400px;
     max-height: 80vh;
     margin: 0 auto;
-    padding: var(--spacing-lg);
+    padding: var(--spacing-md);
+    overflow: hidden;
 }
 
 .stimulus-image {
-    max-height: 100%;
+    max-width: 95%;
+    max-height: 75vh;
     width: auto;
+    height: auto;
     display: block;
     object-fit: contain;
+    border-radius: 8px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s ease;
+    cursor: pointer;
+}
+
+.stimulus-image:hover {
+    transform: scale(1.02);
 }
 
 .result-actions-row {
@@ -898,25 +911,6 @@ a:hover {
 @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
-}
-
-/* Stimulus container */
-.stimulus-container {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    width: fit-content;
-    height: 80vh;
-    max-height: 80vh;
-    margin: 0 auto;
-    padding: var(--spacing-lg);
-}
-
-.stimulus-image {
-    max-height: 100%;
-    width: auto;
-    display: block;
-    object-fit: contain;
 }
 
 /* Globalne statystyki */

@@ -388,6 +388,13 @@ class UIController {
         stimulusImage.style.display = 'block';
         stimulusImage.src = stimulusUrl;
         
+        console.log('[Debug] URL obrazu bodźca:', stimulusUrl);
+        
+        // Dodaj możliwość powiększenia obrazu po kliknięciu
+        stimulusImage.onclick = function() {
+            window.open(stimulusUrl, '_blank');
+        };
+        
         stimulusImage.onerror = function() {
             Logger.error('Błąd ładowania obrazu bodźca', { url: stimulusUrl });
             stimulusImage.src = '/static/images/default-stimulus.png';

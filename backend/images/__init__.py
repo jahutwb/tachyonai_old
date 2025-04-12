@@ -61,10 +61,22 @@ def get_full_image(image_path):
         # Otwórz obraz za pomocą PIL
         img = Image.open(image_path)
         
-        # Konwertuj do bufora
+        # Zachowujemy oryginalny format obrazu lub konwertujemy do PNG jeśli format nie jest obsługiwany
+        format_to_save = img.format if img.format in ['PNG', 'JPEG', 'JPG'] else 'PNG'
+        
+        # Konwertuj do bufora - zachowując oryginalny rozmiar
         buffer = io.BytesIO()
-        img.save(buffer, format="PNG")
+        
+        # Dla JPEG zachowujemy wysoką jakość
+        if format_to_save in ['JPEG', 'JPG']:
+            img.save(buffer, format=format_to_save, quality=95)
+        else:
+            img.save(buffer, format=format_to_save)
+            
         buffer.seek(0)
+        
+        # Zapisz informacje o obrazie w logu
+        logger.info(f"Załadowano obraz w pełnej rozdzielczości: {image_path}, format: {format_to_save}, rozmiar: {img.size}")
         
         # Zwróć binarne dane obrazu
         return buffer.getvalue()
