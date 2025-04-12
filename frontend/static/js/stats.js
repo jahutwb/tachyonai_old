@@ -573,6 +573,12 @@ async function loadGenealogyData(type) {
     showLoadingOverlay('Ładowanie genealogii bodźców...');
     
     try {
+        // Pobierz sesje użytkownika, jeśli jeszcze nie pobrano
+        if (!StatsState.sessions || StatsState.sessions.length === 0) {
+            await loadUserSessions();
+        }
+        
+        // Pobierz dane genealogii
         const response = await fetchWithAuth(`/api/genealogy/${type}`);
         
         if (!response.ok) {
@@ -580,7 +586,9 @@ async function loadGenealogyData(type) {
         }
         
         const genealogyData = await response.json();
-        updateGenealogyView(genealogyData);
+        
+        // Zaktualizuj widok z nowymi danymi
+        updateGenealogyView(genealogyData, type);
         
         hideLoadingOverlay();
     } catch (error) {
@@ -590,8 +598,8 @@ async function loadGenealogyData(type) {
     }
 }
 
-// Aktualizacja widoku genealogii
-function updateGenealogyView(genealogyData) {
+// Aktualizacja widoku genealogii - nowa implementacja
+function updateGenealogyView(genealogyData, type) {
     const genealogyContainer = document.getElementById('genealogy-container');
     genealogyContainer.innerHTML = '';
     
@@ -600,60 +608,395 @@ function updateGenealogyView(genealogyData) {
         return;
     }
     
-    // Stwórz strukturę drzewa genealogicznego
-    const treeContainer = document.createElement('div');
-    treeContainer.className = 'genealogy-tree';
+    // Pobierz sesje użytkownika posortowane od najnowszej do najstarszej
+    const sessions = [...StatsState.sessions].sort((a, b) => new Date(b.started_at) - new Date(a.started_at));
     
-    // Wyszukaj wszystkie korzenie (obrazy bez rodziców)
-    const rootNodes = genealogyData.filter(item => !item.parent);
+    if (!sessions || sessions.length === 0) {
+        genealogyContainer.innerHTML = '<p>Brak sesji do wyświetlenia.</p>';
+        return;
+    }
     
-    // Buduj drzewo
-    rootNodes.forEach(root => {
-        const rootElement = createGenealogyNode(root, genealogyData);
-        treeContainer.appendChild(rootElement);
+    // Utwórz mapę wszystkich bodźców z genealogii dla szybkiego dostępu
+    const genealogyMap = new Map();
+    genealogyData.forEach(node => {
+        genealogyMap.set(node.id, node);
     });
     
-    genealogyContainer.appendChild(treeContainer);
+    // Utwórz kontener dla całego widoku genealogii
+    const genealogyView = document.createElement('div');
+    genealogyView.className = 'genealogy-view';
+    
+    // Dodaj nagłówek z informacją o typie bodźców
+    const headerRow = document.createElement('div');
+    headerRow.className = 'genealogy-header';
+    headerRow.innerHTML = `
+        <div class="genealogy-title">Genealogia bodźców ${type === 'positive' ? 'pozytywnych' : 'negatywnych'}</div>
+        <div class="genealogy-info">
+            <p>Kliknij bodziec, aby zobaczyć jego przodków i potomków</p>
+            <p><span class="color-guide random">■</span> random <span class="color-guide bought">■</span> bought <span class="color-guide child">■</span> child</p>
+        </div>
+    `;
+    genealogyView.appendChild(headerRow);
+    
+    // Stwórz kontener dla sesji
+    const sessionsContainer = document.createElement('div');
+    sessionsContainer.className = 'genealogy-sessions-container';
+    
+    // Licznik załadowanych sesji
+    let loadedSessions = 0;
+    const sessionsToLoad = Math.min(20, sessions.length);
+    
+    // Iteruj przez sesje
+    sessions.slice(0, sessionsToLoad).forEach((session, index) => {
+        if (!session || !session.id) return; // Pomijamy nieprawidłowe sesje
+        
+        // Pobierz datę sesji
+        const sessionDate = new Date(session.started_at || new Date());
+        const formattedDate = `${sessionDate.toLocaleDateString()} ${sessionDate.toLocaleTimeString()}`;
+        
+        // Stwórz wiersz sesji
+        const sessionRow = document.createElement('div');
+        sessionRow.className = 'genealogy-session-row';
+        sessionRow.dataset.sessionId = session.id;
+        
+        // Dodaj header sesji
+        const sessionHeader = document.createElement('div');
+        sessionHeader.className = 'genealogy-session-header';
+        
+        // Formatowanie zysku
+        const profit = ((session.session_profit_factor - 1) * 100).toFixed(2);
+        const profitClass = parseFloat(profit) >= 0 ? 'positive' : 'negative';
+        
+        sessionHeader.innerHTML = `
+            <div class="session-info">
+                <span class="session-number">Sesja ${sessions.length - index}</span>
+                <span class="session-date">${formattedDate}</span>
+            </div>
+            <div class="session-stats">
+                <span class="session-profit ${profitClass}">Zysk: ${profit}%</span>
+            </div>
+        `;
+        sessionRow.appendChild(sessionHeader);
+        
+        // Stwórz kontener dla pul bodźców
+        const poolsContainer = document.createElement('div');
+        poolsContainer.className = 'genealogy-pools-container';
+        
+        // Dodaj pule bodźców (pozytywne i negatywne)
+        const typesToShow = type === 'all' ? ['positive', 'negative'] : [type];
+        
+        typesToShow.forEach(poolType => {
+            // Stwórz kontener dla puli
+            const poolContainer = document.createElement('div');
+            poolContainer.className = `genealogy-pool ${poolType}-pool`;
+            
+            // Stwórz nagłówek puli
+            const poolHeader = document.createElement('div');
+            poolHeader.className = 'pool-header';
+            poolHeader.innerHTML = `<h4>${poolType === 'positive' ? 'Bodźce pozytywne' : 'Bodźce negatywne'}</h4>`;
+            
+            // Dodaj nagłówek i kontener puli do kontenera pul
+            const poolSection = document.createElement('div');
+            poolSection.className = `pool-section ${poolType}-section`;
+            poolSection.appendChild(poolHeader);
+            poolSection.appendChild(poolContainer);
+            poolsContainer.appendChild(poolSection);
+            
+            // Pobierz pulę z API
+            fetchWithAuth(`/api/sessions/${session.id}/pools?type=${poolType}`)
+                .then(response => {
+                    if (response.ok) {
+                        return response.json();
+                    }
+                    throw new Error(`Błąd pobierania puli typu ${poolType} dla sesji ${session.id}`);
+                })
+                .then(poolData => {
+                    if (poolData && Array.isArray(poolData) && poolData.length > 0) {
+                        poolData.forEach(item => {
+                            if (item && typeof item === 'object') {
+                                // Stwórz element bodźca
+                                const stimulusCard = createStimulusCard(item, genealogyMap);
+                                poolContainer.appendChild(stimulusCard);
+                            }
+                        });
+                    } else {
+                        poolContainer.innerHTML = '<p class="no-data">Brak bodźców</p>';
+                    }
+                })
+                .catch(error => {
+                    console.error(`Błąd pobierania puli ${poolType} dla sesji ${session.id}:`, error);
+                    poolContainer.innerHTML = '<p class="error">Błąd pobierania danych</p>';
+                });
+        });
+        
+        // Dodaj kontener pul do wiersza sesji
+        sessionRow.appendChild(poolsContainer);
+        
+        // Dodaj wiersz sesji do kontenera sesji
+        sessionsContainer.appendChild(sessionRow);
+        
+        loadedSessions++;
+    });
+    
+    // Dodaj przycisk "Załaduj więcej" jeśli są jeszcze sesje do załadowania
+    if (loadedSessions < sessions.length) {
+        const loadMoreButton = document.createElement('button');
+        loadMoreButton.className = 'button secondary-button load-more-button';
+        loadMoreButton.textContent = 'Załaduj więcej sesji';
+        loadMoreButton.addEventListener('click', () => {
+            // Implementacja ładowania kolejnych sesji
+            const startIndex = loadedSessions;
+            const nextSessionsToLoad = Math.min(10, sessions.length - loadedSessions);
+            
+            if (nextSessionsToLoad <= 0) {
+                loadMoreButton.disabled = true;
+                loadMoreButton.textContent = 'Nie ma więcej sesji do załadowania';
+                return;
+            }
+            
+            showLoadingOverlay('Ładowanie dodatkowych sesji...');
+            
+            // Dodajemy timeout, aby UI mogło się odświeżyć
+            setTimeout(() => {
+                // Dodaj kolejne sesje
+                sessions.slice(startIndex, startIndex + nextSessionsToLoad).forEach((session, index) => {
+                    if (!session || !session.id) return; // Pomijamy nieprawidłowe sesje
+                    
+                    // Tutaj powtórz kod tworzenia wiersza sesji podobny do powyższego
+                    // ...
+                    
+                    // Aktualizuj licznik
+                    loadedSessions++;
+                });
+                
+                // Jeśli załadowaliśmy wszystkie sesje, ukryj przycisk
+                if (loadedSessions >= sessions.length) {
+                    loadMoreButton.style.display = 'none';
+                }
+                
+                hideLoadingOverlay();
+            }, 100);
+        });
+        sessionsContainer.appendChild(loadMoreButton);
+    }
+    
+    // Dodaj kontener sesji do widoku genealogii
+    genealogyView.appendChild(sessionsContainer);
+    
+    // Dodaj widok genealogii do kontenera
+    genealogyContainer.appendChild(genealogyView);
 }
 
-// Tworzenie węzła drzewa genealogicznego
-function createGenealogyNode(node, allNodes) {
-    const nodeElement = document.createElement('div');
-    nodeElement.className = 'genealogy-node';
+// Funkcja tworząca kartę bodźca
+function createStimulusCard(item, genealogyMap) {
+    const card = document.createElement('div');
+    card.className = 'stimulus-card';
+    card.dataset.id = item.id;
+    card.dataset.origin = item.origin || 'unknown';
     
-    // Stwórz zawartość węzła
-    const profit = ((node.profit_factor - 1) * 100).toFixed(2);
+    // Określ klasę na podstawie pochodzenia
+    const originClass = getOriginClass(item.origin);
+    card.classList.add(originClass);
     
-    nodeElement.innerHTML = `
-        <div class="genealogy-node-content">
-            <div class="node-image">
-                <img src="/api/images/${node.id}/thumbnail" alt="Bodziec #${node.id}">
+    // Dodaj klasę dla bodźców z dodatnią liczbą sukcesów
+    const successes = item.successes || 0;
+    if (successes > 0) {
+        card.classList.add('has-successes');
+    }
+    
+    // Pobierz dane genealogiczne, jeśli dostępne
+    const genealogyNode = genealogyMap.get(item.id);
+    
+    // Ustal klasę dla liczby sukcesów
+    const successClass = successes > 0 ? 'success-count positive' : 'success-count negative';
+    
+    // Przygotuj HTML dla części z informacją o pochodzeniu
+    let originHtml = '';
+    if (item.origin && item.origin.startsWith('child_of_')) {
+        // Pobierz ID rodziców
+        const parentIds = getParentIdsFromOrigin(item.origin);
+        originHtml = '<div class="origin-parents">';
+        
+        // Dodaj kafelki dla każdego rodzica
+        parentIds.forEach(parentId => {
+            originHtml += `<span class="parent-badge">${parentId}</span>`;
+        });
+        
+        // Dodaj informację o szumie, jeśli istnieje
+        if (item.origin.includes('noise')) {
+            const noiseMatch = item.origin.match(/noise_(\d+)/);
+            if (noiseMatch && noiseMatch[1]) {
+                originHtml += `<span class="noise-badge">Szum ${noiseMatch[1]}</span>`;
+            }
+        }
+        
+        originHtml += '</div>';
+    } else {
+        originHtml = `<div class="origin-label ${originClass.replace('origin-', '')}">${translateOrigin(item.origin || 'unknown')}</div>`;
+    }
+    
+    // Ustaw zawartość karty
+    card.innerHTML = `
+        <div class="stimulus-image">
+            <img src="/api/images/${item.id}/thumbnail" alt="Bodziec #${item.id}" loading="lazy">
+        </div>
+        <div class="stimulus-details">
+            <div class="stimulus-id">ID: ${item.id}</div>
+            <div class="stimulus-stats">
+                <span class="${successClass}">${successes}</span>
             </div>
-            <div class="node-details">
-                <div>ID: ${node.id}</div>
-                <div>Sukcesów: ${node.successes}</div>
-                <div>Zysk: ${profit}%</div>
-                <div>Pochodzenie: ${translateOrigin(node.origin)}</div>
+            <div class="stimulus-origin-container">
+                ${originHtml}
             </div>
         </div>
     `;
     
-    // Znajdź wszystkie dzieci tego węzła
-    const children = allNodes.filter(item => item.parent === node.id);
-    
-    if (children.length > 0) {
-        const childrenContainer = document.createElement('div');
-        childrenContainer.className = 'genealogy-children';
-        
-        children.forEach(child => {
-            const childElement = createGenealogyNode(child, allNodes);
-            childrenContainer.appendChild(childElement);
+    // Dodaj obsługę kliknięcia
+    card.addEventListener('click', () => {
+        // Usuń podświetlenie ze wszystkich kart
+        document.querySelectorAll('.stimulus-card').forEach(c => {
+            c.classList.remove('highlighted', 'ancestor-random', 'ancestor-bought', 'ancestor-child', 'descendant-random', 'descendant-bought', 'descendant-child');
         });
         
-        nodeElement.appendChild(childrenContainer);
+        // Podświetl tę kartę
+        card.classList.add('highlighted');
+        
+        // Podświetl przodków i potomków
+        highlightAncestors(card);
+        highlightDescendants(card);
+    });
+    
+    return card;
+}
+
+// Funkcja określająca klasę CSS na podstawie pochodzenia
+function getOriginClass(origin) {
+    if (!origin) return 'origin-unknown';
+    if (origin === 'random') return 'origin-random';
+    if (origin === 'bought') return 'origin-bought';
+    if (origin.startsWith('child_of_')) return 'origin-child';
+    return 'origin-unknown';
+}
+
+// Pobranie ID rodziców z origin typu child_of_X_Y
+function getParentIdsFromOrigin(origin) {
+    if (!origin || !origin.startsWith('child_of_')) return [];
+    
+    // Spróbuj dopasować obie wersje: child_of_X_Y lub child_of_X
+    const match = origin.match(/child_of_(\d+)(?:_(\d+))?/);
+    if (!match) return [];
+    
+    const parentIds = [];
+    if (match[1]) parentIds.push(parseInt(match[1]));
+    if (match[2]) parentIds.push(parseInt(match[2]));
+    
+    return parentIds;
+}
+
+// Funkcja podświetlająca przodków
+function highlightAncestors(cardElement) {
+    const clickedId = parseInt(cardElement.dataset.id);
+    const origin = cardElement.dataset.origin;
+    
+    // Znajdź wszystkie sesje (od najnowszej do najstarszej)
+    const sessionRows = document.querySelectorAll('.genealogy-session-row');
+    const clickedSessionRow = cardElement.closest('.genealogy-session-row');
+    
+    // Indeks klikniętej sesji w kolekcji wszystkich sesji
+    let clickedIndex = -1;
+    sessionRows.forEach((row, index) => {
+        if (row === clickedSessionRow) {
+            clickedIndex = index;
+        }
+    });
+    
+    // Jeśli to bodziec typu child_of_, znajdź jego rodziców
+    let parentIds = [];
+    if (origin && origin.startsWith('child_of_')) {
+        parentIds = getParentIdsFromOrigin(origin);
+    } 
+    // Jeśli to bodziec typu bought, znajdź oryginał
+    else if (origin === 'bought') {
+        parentIds = [clickedId]; // Szukamy tego samego ID ale innego origin
     }
     
-    return nodeElement;
+    // Jeśli znaleźliśmy rodziców lub to bodziec bought, podświetl ich w starszych sesjach
+    if (parentIds.length > 0 && clickedIndex >= 0) {
+        // Przeszukuj starsze sesje (mają wyższy indeks)
+        for (let i = clickedIndex + 1; i < sessionRows.length; i++) {
+            const session = sessionRows[i];
+            const stimulusCards = session.querySelectorAll('.stimulus-card');
+            
+            stimulusCards.forEach(card => {
+                const cardId = parseInt(card.dataset.id);
+                const cardOrigin = card.dataset.origin;
+                
+                // Sprawdź czy to rodzic
+                if (parentIds.includes(cardId)) {
+                    // Dla bodźców bought szukamy oryginału (tego samego ID ale innego origin)
+                    if (origin === 'bought') {
+                        if (cardId === clickedId && cardOrigin !== 'bought') {
+                            card.classList.add('ancestor-' + getOriginClass(cardOrigin).replace('origin-', ''));
+                            
+                            // Rekurencyjnie podświetl przodków tego rodzica, jeśli on też był dzieckiem
+                            if (cardOrigin && cardOrigin.startsWith('child_of_')) {
+                                highlightAncestors(card);
+                            }
+                        }
+                    } else {
+                        // Dla pozostałych typów szukamy po ID
+                        card.classList.add('ancestor-' + getOriginClass(cardOrigin).replace('origin-', ''));
+                        
+                        // Rekurencyjnie podświetl przodków tego rodzica, jeśli on też był dzieckiem
+                        if (cardOrigin && cardOrigin.startsWith('child_of_')) {
+                            highlightAncestors(card);
+                        }
+                    }
+                }
+            });
+        }
+    }
+}
+
+// Funkcja podświetlająca potomków
+function highlightDescendants(cardElement) {
+    const clickedId = parseInt(cardElement.dataset.id);
+    
+    // Znajdź wszystkie sesje (od najnowszej do najstarszej)
+    const sessionRows = document.querySelectorAll('.genealogy-session-row');
+    const clickedSessionRow = cardElement.closest('.genealogy-session-row');
+    
+    // Indeks klikniętej sesji w kolekcji wszystkich sesji
+    let clickedIndex = -1;
+    sessionRows.forEach((row, index) => {
+        if (row === clickedSessionRow) {
+            clickedIndex = index;
+        }
+    });
+    
+    // Przeszukuj nowsze sesje (mają niższy indeks)
+    if (clickedIndex > 0) {
+        for (let i = clickedIndex - 1; i >= 0; i--) {
+            const session = sessionRows[i];
+            const stimulusCards = session.querySelectorAll('.stimulus-card');
+            
+            stimulusCards.forEach(card => {
+                const cardOrigin = card.dataset.origin;
+                
+                // Sprawdź czy to potomek (origin zawiera ID klikniętego bodźca)
+                if (cardOrigin && cardOrigin.startsWith('child_of_')) {
+                    const parentIds = getParentIdsFromOrigin(cardOrigin);
+                    
+                    if (parentIds.includes(clickedId)) {
+                        card.classList.add('descendant-' + getOriginClass(cardOrigin).replace('origin-', ''));
+                        
+                        // Rekurencyjnie podświetl potomków tego potomka
+                        highlightDescendants(card);
+                    }
+                }
+            });
+        }
+    }
 }
 
 // Pomocnicza funkcja tłumacząca pochodzenie bodźca

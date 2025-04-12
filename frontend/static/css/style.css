@@ -1019,3 +1019,343 @@ a:hover {
 .difference-value.negative {
     color: #FF0000;
 }
+
+/* Style dla genealogii bodźców */
+.genealogy-view {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.genealogy-header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.genealogy-title {
+    font-size: 1.2rem;
+    font-weight: bold;
+    color: var(--primary-color);
+}
+
+.genealogy-info {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+}
+
+.genealogy-info .color-guide {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    margin: 0 5px;
+    vertical-align: middle;
+}
+
+.genealogy-info .random {
+    background-color: blue;
+}
+
+.genealogy-info .bought {
+    background-color: gold;
+}
+
+.genealogy-info .child {
+    background-color: violet;
+}
+
+.genealogy-sessions-container {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+}
+
+.genealogy-session-row {
+    background-color: var(--bg-secondary);
+    border-radius: 8px;
+    padding: 1rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.genealogy-session-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.session-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.session-number {
+    font-weight: bold;
+    font-size: 1.1rem;
+}
+
+.session-date {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+}
+
+.session-stats {
+    font-size: 0.9rem;
+}
+
+.genealogy-pools-container {
+    display: flex;
+    gap: 1.5rem;
+}
+
+.pool-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.positive-section {
+    border-left: 3px solid var(--success-color);
+    padding-left: 0.5rem;
+}
+
+.negative-section {
+    border-left: 3px solid var(--error-color);
+    padding-left: 0.5rem;
+}
+
+.pool-header h4 {
+    margin: 0;
+    font-size: 1rem;
+    color: var(--text-secondary);
+}
+
+.genealogy-pool {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    padding: 0.5rem;
+}
+
+.stimulus-card {
+    width: 140px;
+    background-color: var(--bg-primary);
+    border-radius: 6px;
+    overflow: hidden;
+    transition: all 0.2s ease;
+    border: 2px solid transparent;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* Jaśniejsze tło dla bodźców z sukcesami */
+.stimulus-card.has-successes {
+    background-color: rgba(255, 255, 255, 0.15);
+}
+
+.stimulus-card:hover {
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
+    transform: translateY(-2px);
+}
+
+.stimulus-image {
+    height: 100px;
+    overflow: hidden;
+}
+
+.stimulus-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.stimulus-details {
+    padding: 0.5rem;
+    font-size: 0.8rem;
+}
+
+.stimulus-id {
+    font-weight: bold;
+    margin-bottom: 0.25rem;
+}
+
+.stimulus-stats {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 0.5rem;
+}
+
+/* Styl dla liczby sukcesów */
+.success-count {
+    font-size: 1.1rem;
+    font-weight: bold;
+    padding: 2px 8px;
+    border-radius: 4px;
+}
+
+.success-count.positive {
+    color: #28a745;
+}
+
+.success-count.negative {
+    color: #dc3545;
+}
+
+/* Styl dla kontenera informacji o pochodzeniu */
+.stimulus-origin-container {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 4px;
+}
+
+/* Style dla etykiet pochodzenia */
+.origin-label {
+    padding: 2px 5px;
+    border-radius: 3px;
+    font-size: 0.7rem;
+    color: white;
+    text-align: center;
+}
+
+.origin-label.random {
+    background-color: blue;
+}
+
+.origin-label.bought {
+    background-color: gold;
+    color: black;
+}
+
+.origin-label.child {
+    background-color: violet;
+}
+
+.origin-label.unknown {
+    background-color: #ccc;
+    color: #333;
+}
+
+/* Style dla kafelków rodziców */
+.origin-parents {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 4px;
+}
+
+.parent-badge {
+    background-color: violet;
+    color: white;
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-size: 0.7rem;
+}
+
+.noise-badge {
+    background-color: #999;
+    color: white;
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-size: 0.7rem;
+    margin-left: 2px;
+}
+
+/* Klasy pochodzenia bodźców */
+.origin-random {
+    border-top: 3px solid #888;
+}
+
+.origin-bought {
+    border-top: 3px solid var(--success-color);
+}
+
+.origin-child {
+    border-top: 3px solid var(--accent-color);
+}
+
+.origin-unknown {
+    border-top: 3px solid #ccc;
+}
+
+/* Klasy dla podświetlania */
+.stimulus-card.highlighted {
+    border-color: white;
+    box-shadow: 0 0 0 2px white, 0 0 8px 2px rgba(255, 255, 255, 0.5);
+    z-index: 10;
+    position: relative;
+}
+
+/* Style dla przodków */
+.stimulus-card.ancestor-random {
+    border-color: blue;
+    box-shadow: 0 0 0 2px rgba(0, 0, 255, 0.3);
+    z-index: 5;
+}
+
+.stimulus-card.ancestor-bought {
+    border-color: gold;
+    box-shadow: 0 0 0 2px rgba(255, 215, 0, 0.3);
+    z-index: 5;
+}
+
+.stimulus-card.ancestor-child {
+    border-color: violet;
+    box-shadow: 0 0 0 2px rgba(238, 130, 238, 0.3);
+    z-index: 5;
+}
+
+/* Style dla potomków */
+.stimulus-card.descendant-random {
+    border-color: blue;
+    box-shadow: 0 0 0 2px rgba(0, 0, 255, 0.3);
+    z-index: 5;
+}
+
+.stimulus-card.descendant-bought {
+    border-color: gold;
+    box-shadow: 0 0 0 2px rgba(255, 215, 0, 0.3);
+    z-index: 5;
+}
+
+.stimulus-card.descendant-child {
+    border-color: violet;
+    box-shadow: 0 0 0 2px rgba(238, 130, 238, 0.3);
+    z-index: 5;
+}
+
+.load-more-button {
+    margin: 1.5rem auto;
+    display: block;
+}
+
+/* Responsywność dla widoku genealogii */
+@media (max-width: 768px) {
+    .genealogy-pools-container {
+        flex-direction: column;
+    }
+    
+    .pool-section {
+        border-left: none;
+        padding-left: 0;
+    }
+    
+    .positive-section {
+        border-top: 3px solid var(--success-color);
+        padding-top: 0.5rem;
+    }
+    
+    .negative-section {
+        border-top: 3px solid var(--error-color);
+        padding-top: 0.5rem;
+    }
+    
+    .stimulus-card {
+        width: calc(50% - 0.5rem);
+    }
+}

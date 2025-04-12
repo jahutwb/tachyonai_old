@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import List, Dict, Optional
 from sqlalchemy.orm import Session
 import traceback
@@ -711,3 +711,34 @@ def trigger_pool_generation(
     except Exception as e:
         logger.error(f"Błąd podczas triggerowania generowania puli: {str(e)}")
         logger.error(traceback.format_exc())
+
+@router.get("/sessions/{session_id}/pools", response_model=List[Dict])
+def get_session_pools(
+    session_id: int,
+    type: str = Query("positive", description="Typ puli: 'positive' lub 'negative'"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Pobiera pulę bodźców (positive/negative) dla danej sesji."""
+    # Weryfikacja typu
+    if type not in ['positive', 'negative']:
+        raise HTTPException(status_code=400, detail="Nieprawidłowy typ. Dozwolone: 'positive' lub 'negative'")
+    
+    # Pobierz sesję
+    session = db.query(SessionModel).filter(
+        SessionModel.id == session_id,
+        SessionModel.user_id == current_user.id
+    ).first()
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Sesja nie znaleziona lub brak dostępu")
+    
+    # Wybierz odpowiednią pulę
+    pool_json = session.pos_pool_json if type == 'positive' else session.neg_pool_json
+    
+    # Jeśli pula jest pusta, zwróć pustą listę
+    if not pool_json:
+        return []
+    
+    # Zwróć dane puli
+    return pool_json

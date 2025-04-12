@@ -7,6 +7,7 @@ from ..models import User, Session as SessionModel, Round
 from .. import schemas
 from ..auth import get_current_user
 from ..schemas import RoundResultEnum
+from ..pool_image_item import PoolImageItem
 
 router = APIRouter()
 
@@ -109,30 +110,63 @@ def get_genealogy(
     db: Session = Depends(get_db),
 ):
     """Pobiera dane genealogii bodźców dla danego typu."""
-    # Uproszczona implementacja - w rzeczywistej aplikacji pobierałaby prawdziwe dane genealogii
-    # Zwracamy testowe dane
-    genealogy_nodes = []
-    for i in range(5):
-        # Dodaj węzeł główny
-        genealogy_nodes.append({
-            "id": i + 1,
-            "successes": 10 - i,
-            "failures": i,
-            "profit_factor": 1.1,
-            "parent": None,
-            "origin": "random"
-        })
-        
-        # Dodaj dzieci
-        for j in range(2):
-            child_id = 100 + (i * 10) + j
-            genealogy_nodes.append({
-                "id": child_id,
-                "successes": 5 - j,
-                "failures": j,
-                "profit_factor": 1.05,
-                "parent": i + 1,
-                "origin": "child"
-            })
+    if type not in ['positive', 'negative']:
+        raise HTTPException(status_code=400, detail="Nieprawidłowy typ bodźca. Dozwolone: 'positive' lub 'negative'")
     
-    return genealogy_nodes 
+    # Pobierz sesje użytkownika, posortowane od najnowszej do najstarszej
+    sessions = db.query(SessionModel).filter(
+        SessionModel.user_id == current_user.id,
+        SessionModel.status == "COMPLETED"
+    ).order_by(SessionModel.ended_at.desc()).limit(20).all()
+    
+    if not sessions:
+        return []
+    
+    # Słownik do przechowywania unikalnych węzłów genealogii
+    genealogy_nodes = {}
+    
+    # Iteruj przez sesje od najstarszej do najnowszej
+    for session in reversed(sessions):
+        # Wybierz odpowiednią pulę w zależności od typu
+        pool_json = session.pos_pool_json if type == 'positive' else session.neg_pool_json
+        
+        if not pool_json:
+            continue
+        
+        for item in pool_json:
+            # Przygotuj obiekt PoolImageItem dla łatwiejszej analizy
+            pool_item = PoolImageItem.from_dict(item)
+            
+            # Jeśli węzeł już istnieje, zaktualizuj jego statystyki
+            if pool_item.id in genealogy_nodes:
+                node = genealogy_nodes[pool_item.id]
+                node['successes'] += pool_item.successes
+                node['failures'] += pool_item.failures
+            else:
+                # Określ rodzica na podstawie origin
+                parent = None
+                if pool_item.is_child():
+                    parents = pool_item.get_parents()
+                    if parents:
+                        parent = parents[0]  # Pierwszy rodzic jako główny
+                
+                # Dodaj nowy węzeł
+                genealogy_nodes[pool_item.id] = {
+                    "id": pool_item.id,
+                    "successes": pool_item.successes,
+                    "failures": pool_item.failures,
+                    "profit_factor": 1.0,  # Zostanie zaktualizowane później
+                    "parent": parent,
+                    "origin": "child" if pool_item.is_child() else pool_item.origin
+                }
+    
+    # Oblicz czynnik zysku dla każdego węzła
+    for node_id, node in genealogy_nodes.items():
+        if node['successes'] > 0 or node['failures'] > 0:
+            total = node['successes'] + node['failures']
+            success_rate = node['successes'] / total if total > 0 else 0
+            # Prosty model zysku: 1.0 + (proporcja sukcesów * 0.2)
+            node['profit_factor'] = 1.0 + (success_rate * 0.2)
+    
+    # Zwróć listę węzłów
+    return list(genealogy_nodes.values()) 
