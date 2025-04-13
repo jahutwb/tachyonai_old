@@ -1071,65 +1071,41 @@ a:hover {
 .genealogy-session-header {
     display: flex;
     flex-direction: column;
-    padding: 6px;
-    background-color: var(--bg-color-light);
-    border-radius: var(--border-radius) var(--border-radius) 0 0;
-    margin-bottom: 1px;
-    max-width: 100%;
+    padding: 2px 6px;
+    background-color: #f0f0f0;
+    border-bottom: 1px solid #ddd;
 }
 
-.session-info {
+.session-info, .session-stats {
     display: flex;
-    align-items: center;
-    gap: 6px;
-    margin-bottom: 3px;
     flex-wrap: wrap;
+    align-items: center;
+    gap: 3px;
+    margin-bottom: 1px;
 }
 
 .session-stats {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px 10px;
+    gap: 3px 6px;
 }
 
 .session-number {
     font-weight: bold;
-    color: var(--accent-color);
-    font-size: 0.9em;
+    font-size: 0.85em;
 }
 
-.session-date {
-    color: var(--text-color-secondary);
-    font-size: 0.8em;
+.session-date, .session-id, .session-rounds {
+    font-size: 0.75em;
+    color: #666;
 }
 
-.session-id {
-    color: var(--text-color-secondary);
-    font-size: 0.8em;
-    opacity: 0.7;
-}
-
-.session-rounds, 
-.session-profit, 
-.session-successes, 
-.session-failures, 
-.session-success-rate {
-    color: var(--text-color-secondary);
-    font-size: 0.8em;
-}
-
-.session-profit.positive {
-    color: #28a745;
-}
-
-.session-profit.negative {
-    color: #dc3545;
+.session-successes, .session-failures, .session-success-rate, .session-profit {
+    font-size: 0.75em;
+    margin-right: 6px;
 }
 
 .small-button {
-    padding: 3px 6px;
-    font-size: 0.8em;
+    padding: 1px 4px;
+    font-size: 0.7em;
     margin-left: auto;
 }
 

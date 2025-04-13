@@ -6,6 +6,17 @@
     <title>TachyonAI - Statystyki Użytkownika</title>
     <link rel="stylesheet" href="{{ url_for('static', path='/css/style.css') }}">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* Dodatkowe style dla statystyk sesji */
+        .session-stats .session-successes, 
+        .session-stats .session-failures, 
+        .session-stats .session-success-rate {
+            display: inline-block !important;
+            margin-right: 8px;
+            color: var(--text-color-secondary);
+            font-size: 0.8em;
+        }
+    </style>
 </head>
 <body>
     <nav class="navbar">

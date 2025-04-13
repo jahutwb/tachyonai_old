@@ -71,7 +71,29 @@ async function loadUserSessions() {
         throw new Error('Nie można załadować sesji użytkownika');
     }
     
-    StatsState.sessions = await response.json();
+    const sessions = await response.json();
+    
+    // Uzupełnij szczegóły każdej sesji (sukcesy, porażki itd.)
+    const sessionsWithDetails = await Promise.all(sessions.map(async (session) => {
+        try {
+            const summaryResponse = await fetchWithAuth(`/api/sessions/${session.id}/summary`);
+            if (summaryResponse.ok) {
+                const summaryData = await summaryResponse.json();
+                // Uzupełnij dane sesji o szczegóły z summary
+                return {
+                    ...session,
+                    success_count: summaryData.success_count,
+                    failure_count: summaryData.failure_count,
+                    round_count: summaryData.round_count || session.round_count
+                };
+            }
+        } catch (error) {
+            console.error(`Błąd pobierania szczegółów sesji ${session.id}:`, error);
+        }
+        return session;
+    }));
+    
+    StatsState.sessions = sessionsWithDetails;
 }
 
 // Aktualizacja listy sesji
@@ -595,29 +617,30 @@ async function loadGenealogyData(type) {
         // Pobierz sesje użytkownika, jeśli jeszcze nie pobrano
         if (!StatsState.sessions || StatsState.sessions.length === 0) {
             await loadUserSessions();
-        }
-        
-        // Upewnij się, że sesje mają wszystkie potrzebne pola
-        const promises = StatsState.sessions.map(async (session) => {
-            if (!session.success_count || !session.failure_count) {
-                console.log(`Pobieranie szczegółów dla sesji ${session.id}`);
-                const response = await fetchWithAuth(`/api/sessions/${session.id}/summary`);
-                if (response.ok) {
-                    const sessionData = await response.json();
-                    console.log(`Szczegóły sesji ${session.id}:`, sessionData);
-                    session.success_count = sessionData.success_count;
-                    session.failure_count = sessionData.failure_count;
-                    session.session_profit_factor = sessionData.session_profit_factor;
+        } else {
+            // Upewnij się, że każda sesja ma complete_count i failure_count
+            const needDetailsPromises = StatsState.sessions
+                .filter(session => session.success_count === undefined || session.failure_count === undefined)
+                .map(async (session) => {
+                    console.log(`Pobieranie brakujących szczegółów dla sesji ${session.id}`);
+                    try {
+                        const response = await fetchWithAuth(`/api/sessions/${session.id}/summary`);
+                        if (response.ok) {
+                            const sessionData = await response.json();
+                            session.success_count = sessionData.success_count;
+                            session.failure_count = sessionData.failure_count;
+                            session.round_count = sessionData.round_count || session.round_count;
+                        }
+                    } catch (error) {
+                        console.error(`Błąd pobierania szczegółów sesji ${session.id}:`, error);
+                    }
                     return session;
-                } else {
-                    console.error(`Błąd pobierania szczegółów sesji ${session.id}`);
-                    return session;
-                }
+                });
+                
+            if (needDetailsPromises.length > 0) {
+                await Promise.all(needDetailsPromises);
             }
-            return session;
-        });
-        
-        await Promise.all(promises);
+        }
         
         // Pobierz dane genealogii
         const response = await fetchWithAuth(`/api/genealogy/${type}`);
@@ -717,25 +740,30 @@ function updateGenealogyView(genealogyData, type) {
         sessionRow.className = 'genealogy-session-row';
         sessionRow.dataset.sessionId = session.id;
         
-        // Dodaj header sesji w wersji kompaktowej - wszystkie statystyki w jednym wierszu
+        // Kompaktowy układ z dwoma wierszami w nagłówku
         const sessionHeader = document.createElement('div');
         sessionHeader.className = 'genealogy-session-header';
         
-        sessionHeader.innerHTML = `
+        const statsHtml = `
             <div class="session-info">
                 <span class="session-number">Sesja ${sessions.length - index}</span>
                 <span class="session-date">${formattedDate}</span>
                 <span class="session-id">ID: ${session.id}</span>
+                <span class="session-rounds">Rund: ${roundCount}</span>
+                <button class="button small-button view-session-details" data-session-id="${session.id}">Szczegóły</button>
             </div>
             <div class="session-stats">
-                <span class="session-rounds">Rund: ${roundCount}</span>
                 <span class="session-successes">Sukcesów: ${successCount}</span>
                 <span class="session-failures">Porażek: ${failureCount}</span>
                 <span class="session-success-rate">Skuteczność: ${successRate}%</span>
                 <span class="session-profit ${profitClass}">Zysk: ${profit}%</span>
-                <button class="button small-button view-session-details" data-session-id="${session.id}">Szczegóły</button>
             </div>
         `;
+        
+        // Użyj innerHTML do wstawienia zawartości
+        sessionHeader.innerHTML = statsHtml;
+        
+        // Dodaj nagłówek do wiersza sesji
         sessionRow.appendChild(sessionHeader);
         
         // Stwórz kontener dla pul bodźców
@@ -849,7 +877,7 @@ function createStimulusCard(item, genealogyMap) {
     card.innerHTML = `
         <div class="stimulus-image">
             <img src="/api/images/${item.id}/thumbnail" alt="Bodziec #${item.id}" loading="lazy">
-        </div>
+            </div>
         <div class="stimulus-details">
             <div class="stimulus-id">ID: ${item.id}</div>
             <div class="stimulus-stats">
