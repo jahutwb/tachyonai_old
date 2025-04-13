@@ -1026,14 +1026,14 @@ a:hover {
     width: 100%;
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1rem;
 }
 
 .genealogy-header {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-    margin-bottom: 1rem;
+    gap: 0.3rem;
+    margin-bottom: 0.5rem;
 }
 
 .genealogy-title {
@@ -1055,122 +1055,127 @@ a:hover {
     vertical-align: middle;
 }
 
-.genealogy-info .random {
-    background-color: blue;
-}
-
-.genealogy-info .bought {
-    background-color: gold;
-}
-
-.genealogy-info .child {
-    background-color: violet;
-}
-
 .genealogy-sessions-container {
     display: flex;
     flex-direction: column;
-    gap: 2rem;
+    gap: 1rem;
 }
 
 .genealogy-session-row {
     background-color: var(--bg-secondary);
     border-radius: 8px;
-    padding: 1rem;
+    padding: 0.5rem;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .genealogy-session-header {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px;
+    flex-direction: column;
+    padding: 6px;
     background-color: var(--bg-color-light);
     border-radius: var(--border-radius) var(--border-radius) 0 0;
     margin-bottom: 1px;
+    max-width: 100%;
 }
 
 .session-info {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 6px;
+    margin-bottom: 3px;
+    flex-wrap: wrap;
+}
+
+.session-stats {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
 }
 
 .session-number {
     font-weight: bold;
     color: var(--accent-color);
+    font-size: 0.9em;
 }
 
 .session-date {
     color: var(--text-color-secondary);
-    font-size: 0.9em;
+    font-size: 0.8em;
 }
 
 .session-id {
     color: var(--text-color-secondary);
-    font-size: 0.9em;
+    font-size: 0.8em;
     opacity: 0.7;
 }
 
-.session-stats {
-    display: flex;
-    align-items: center;
-    gap: 15px;
+.session-rounds, 
+.session-profit, 
+.session-successes, 
+.session-failures, 
+.session-success-rate {
+    color: var(--text-color-secondary);
+    font-size: 0.8em;
 }
 
-.session-rounds {
-    color: var(--text-color-secondary);
-    font-size: 0.9em;
+.session-profit.positive {
+    color: #28a745;
+}
+
+.session-profit.negative {
+    color: #dc3545;
 }
 
 .small-button {
-    padding: 4px 8px;
-    font-size: 0.85em;
+    padding: 3px 6px;
+    font-size: 0.8em;
+    margin-left: auto;
 }
 
 .genealogy-pools-container {
     display: flex;
-    gap: 1.5rem;
+    gap: 0.75rem;
+    padding: 0.25rem;
 }
 
 .pool-section {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.3rem;
 }
 
 .positive-section {
     border-left: 3px solid var(--success-color);
-    padding-left: 0.5rem;
+    padding-left: 0.3rem;
 }
 
 .negative-section {
     border-left: 3px solid var(--error-color);
-    padding-left: 0.5rem;
+    padding-left: 0.3rem;
 }
 
-.pool-header h4 {
-    margin: 0;
-    font-size: 1rem;
-    color: var(--text-secondary);
+/* Usuwamy nagłówek pool-header */
+.pool-header {
+    display: none;
 }
 
 .genealogy-pool {
     display: flex;
     flex-wrap: wrap;
-    gap: 1rem;
-    padding: 0.5rem;
+    gap: 0.5rem;
+    padding: 0.25rem;
 }
 
 .stimulus-card {
     display: flex;
     flex-direction: column;
-    width: 100px;
+    width: 130px;
     background-color: rgba(26, 26, 26, 0.7);
     border-radius: 8px;
-    padding: 8px;
-    margin: 4px;
+    padding: 6px;
+    margin: 2px;
     transition: transform 0.2s, box-shadow 0.2s;
     cursor: pointer;
     position: relative;
@@ -1188,10 +1193,10 @@ a:hover {
 
 .stimulus-image {
     width: 100%;
-    height: 80px;
+    height: 90px;
     overflow: hidden;
     border-radius: 4px;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
     background-color: #000;
 }
 
@@ -1203,26 +1208,26 @@ a:hover {
 }
 
 .stimulus-details {
-    padding: 0.5rem;
+    padding: 0.3rem;
     font-size: 0.8rem;
 }
 
 .stimulus-id {
     font-weight: bold;
-    margin-bottom: 0.25rem;
+    margin-bottom: 0.2rem;
 }
 
 .stimulus-stats {
     display: flex;
     justify-content: center;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.3rem;
 }
 
 /* Styl dla liczby sukcesów */
 .success-count {
     font-size: 1.1rem;
     font-weight: bold;
-    padding: 2px 8px;
+    padding: 1px 6px;
     border-radius: 4px;
 }
 
@@ -1239,12 +1244,12 @@ a:hover {
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
-    gap: 4px;
+    gap: 2px;
 }
 
 /* Style dla etykiet pochodzenia */
 .origin-label {
-    padding: 2px 5px;
+    padding: 1px 4px;
     border-radius: 3px;
     font-size: 0.7rem;
     color: white;
@@ -1391,22 +1396,17 @@ a:hover {
 /* Nowe style dla rankingu bodźców */
 .ranking-container-wrapper {
     display: flex;
-    justify-content: space-between;
-    gap: var(--spacing-xl);
-    margin-top: var(--spacing-md);
+    gap: 1rem;
 }
 
 .ranking-column {
     flex: 1;
-    background-color: var(--bg-color-light);
-    border-radius: var(--border-radius);
-    padding: var(--spacing-md);
 }
 
-.ranking-column h3 {
-    text-align: center;
-    margin-bottom: var(--spacing-md);
-    color: var(--accent-color-light);
+.ranking-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
 }
 
 /* Dostosowanie stylów dla połączonej sekcji sesji i genealogii */

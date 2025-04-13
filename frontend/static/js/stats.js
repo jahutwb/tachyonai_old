@@ -597,6 +597,28 @@ async function loadGenealogyData(type) {
             await loadUserSessions();
         }
         
+        // Upewnij się, że sesje mają wszystkie potrzebne pola
+        const promises = StatsState.sessions.map(async (session) => {
+            if (!session.success_count || !session.failure_count) {
+                console.log(`Pobieranie szczegółów dla sesji ${session.id}`);
+                const response = await fetchWithAuth(`/api/sessions/${session.id}/summary`);
+                if (response.ok) {
+                    const sessionData = await response.json();
+                    console.log(`Szczegóły sesji ${session.id}:`, sessionData);
+                    session.success_count = sessionData.success_count;
+                    session.failure_count = sessionData.failure_count;
+                    session.session_profit_factor = sessionData.session_profit_factor;
+                    return session;
+                } else {
+                    console.error(`Błąd pobierania szczegółów sesji ${session.id}`);
+                    return session;
+                }
+            }
+            return session;
+        });
+        
+        await Promise.all(promises);
+        
         // Pobierz dane genealogii
         const response = await fetchWithAuth(`/api/genealogy/${type}`);
         
@@ -619,6 +641,7 @@ async function loadGenealogyData(type) {
 
 // Aktualizacja widoku genealogii - nowa implementacja
 function updateGenealogyView(genealogyData, type) {
+    console.log("Uruchamiam updateGenealogyView z typem:", type);
     const genealogyContainer = document.getElementById('genealogy-container');
     genealogyContainer.innerHTML = '';
     
@@ -629,6 +652,7 @@ function updateGenealogyView(genealogyData, type) {
     
     // Pobierz sesje użytkownika posortowane od najnowszej do najstarszej
     const sessions = [...StatsState.sessions].sort((a, b) => new Date(b.started_at) - new Date(a.started_at));
+    console.log("Liczba sesji:", sessions.length);
     
     if (!sessions || sessions.length === 0) {
         genealogyContainer.innerHTML = '<p>Brak sesji do wyświetlenia.</p>';
@@ -673,18 +697,29 @@ function updateGenealogyView(genealogyData, type) {
         const sessionDate = new Date(session.started_at || new Date());
         const formattedDate = `${sessionDate.toLocaleDateString()} ${sessionDate.toLocaleTimeString()}`;
         
+        // Oblicz statystyki sesji
+        const successCount = session.success_count || 0;
+        const failureCount = session.failure_count || 0;
+        const roundCount = session.round_count || 0;
+        const successRate = roundCount > 0 ? Math.round((successCount / roundCount) * 100) : 0;
+        const profit = ((session.session_profit_factor - 1) * 100).toFixed(2);
+        const profitClass = parseFloat(profit) >= 0 ? 'positive' : 'negative';
+        
+        console.log(`Sesja ${sessions.length - index} (ID: ${session.id}):`);
+        console.log(`- Rundy: ${roundCount}`);
+        console.log(`- Sukcesy: ${successCount}`);
+        console.log(`- Porażki: ${failureCount}`);
+        console.log(`- Skuteczność: ${successRate}%`);
+        console.log(`- Zysk: ${profit}%`);
+        
         // Stwórz wiersz sesji
         const sessionRow = document.createElement('div');
         sessionRow.className = 'genealogy-session-row';
         sessionRow.dataset.sessionId = session.id;
         
-        // Dodaj header sesji
+        // Dodaj header sesji w wersji kompaktowej - wszystkie statystyki w jednym wierszu
         const sessionHeader = document.createElement('div');
         sessionHeader.className = 'genealogy-session-header';
-        
-        // Formatowanie zysku
-        const profit = ((session.session_profit_factor - 1) * 100).toFixed(2);
-        const profitClass = parseFloat(profit) >= 0 ? 'positive' : 'negative';
         
         sessionHeader.innerHTML = `
             <div class="session-info">
@@ -693,7 +728,10 @@ function updateGenealogyView(genealogyData, type) {
                 <span class="session-id">ID: ${session.id}</span>
             </div>
             <div class="session-stats">
-                <span class="session-rounds">Rund: ${session.round_count}</span>
+                <span class="session-rounds">Rund: ${roundCount}</span>
+                <span class="session-successes">Sukcesów: ${successCount}</span>
+                <span class="session-failures">Porażek: ${failureCount}</span>
+                <span class="session-success-rate">Skuteczność: ${successRate}%</span>
                 <span class="session-profit ${profitClass}">Zysk: ${profit}%</span>
                 <button class="button small-button view-session-details" data-session-id="${session.id}">Szczegóły</button>
             </div>
@@ -712,15 +750,9 @@ function updateGenealogyView(genealogyData, type) {
             const poolContainer = document.createElement('div');
             poolContainer.className = `genealogy-pool ${poolType}-pool`;
             
-            // Stwórz nagłówek puli
-            const poolHeader = document.createElement('div');
-            poolHeader.className = 'pool-header';
-            poolHeader.innerHTML = `<h4>${poolType === 'positive' ? 'Bodźce pozytywne' : 'Bodźce negatywne'}</h4>`;
-            
-            // Dodaj nagłówek i kontener puli do kontenera pul
+            // Dodaj kontener puli do kontenera pul w sekcji
             const poolSection = document.createElement('div');
             poolSection.className = `pool-section ${poolType}-section`;
-            poolSection.appendChild(poolHeader);
             poolSection.appendChild(poolContainer);
             poolsContainer.appendChild(poolSection);
             
@@ -747,71 +779,19 @@ function updateGenealogyView(genealogyData, type) {
                 })
                 .catch(error => {
                     console.error(`Błąd pobierania puli ${poolType} dla sesji ${session.id}:`, error);
-                    poolContainer.innerHTML = '<p class="error">Błąd pobierania danych</p>';
                 });
         });
         
-        // Dodaj kontener pul do wiersza sesji
         sessionRow.appendChild(poolsContainer);
-        
-        // Dodaj wiersz sesji do kontenera sesji
         sessionsContainer.appendChild(sessionRow);
-        
-        loadedSessions++;
     });
     
-    // Dodaj przycisk "Załaduj więcej" jeśli są jeszcze sesje do załadowania
-    if (loadedSessions < sessions.length) {
-        const loadMoreButton = document.createElement('button');
-        loadMoreButton.className = 'button secondary-button load-more-button';
-        loadMoreButton.textContent = 'Załaduj więcej sesji';
-        loadMoreButton.addEventListener('click', () => {
-            // Implementacja ładowania kolejnych sesji
-            const startIndex = loadedSessions;
-            const nextSessionsToLoad = Math.min(10, sessions.length - loadedSessions);
-            
-            if (nextSessionsToLoad <= 0) {
-                loadMoreButton.disabled = true;
-                loadMoreButton.textContent = 'Nie ma więcej sesji do załadowania';
-                return;
-            }
-            
-            showLoadingOverlay('Ładowanie dodatkowych sesji...');
-            
-            // Dodajemy timeout, aby UI mogło się odświeżyć
-            setTimeout(() => {
-                // Dodaj kolejne sesje
-                sessions.slice(startIndex, startIndex + nextSessionsToLoad).forEach((session, index) => {
-                    if (!session || !session.id) return; // Pomijamy nieprawidłowe sesje
-                    
-                    // Tutaj powtórz kod tworzenia wiersza sesji podobny do powyższego
-                    // ...
-                    
-                    // Aktualizuj licznik
-                    loadedSessions++;
-                });
-                
-                // Jeśli załadowaliśmy wszystkie sesje, ukryj przycisk
-                if (loadedSessions >= sessions.length) {
-                    loadMoreButton.style.display = 'none';
-                }
-                
-                hideLoadingOverlay();
-            }, 100);
-        });
-        sessionsContainer.appendChild(loadMoreButton);
-    }
-    
-    // Dodaj kontener sesji do widoku genealogii
     genealogyView.appendChild(sessionsContainer);
-    
-    // Dodaj widok genealogii do kontenera
     genealogyContainer.appendChild(genealogyView);
     
-    // Dodaj obsługę przycisków szczegółów
-    document.querySelectorAll('.genealogy-view .view-session-details').forEach(button => {
-        button.addEventListener('click', (event) => {
-            event.stopPropagation(); // Zapobiegaj propagacji kliknięcia do karty
+    // Dodaj obsługę zdarzeń dla przycisków szczegółów
+    document.querySelectorAll('.view-session-details').forEach(button => {
+        button.addEventListener('click', () => {
             openSessionDetails(button.getAttribute('data-session-id'));
         });
     });
