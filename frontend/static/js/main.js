@@ -24,14 +24,14 @@ async function startGame() {
     // Debugowanie: sprawdź token przed wysłaniem żądania
     const token = getToken();
     console.log('Token przed utworzeniem sesji:', token ? 'token istnieje' : 'brak tokenu');
-    
+
     // Sprawdź ważność tokenu przed rozpoczęciem
     if (!await verifyToken()) {
         console.log('Token jest nieważny lub wygasł - przekierowuję do logowania');
         await refreshToken();
         return;
     }
-    
+
     // Pokaż overlay ładowania
     showLoadingOverlay('Tworzenie nowej sesji...');
 
@@ -47,7 +47,7 @@ async function startGame() {
         });
 
         console.log('Otrzymana odpowiedź:', response.status, response.statusText);
-        
+
         if (!response.ok) {
             const errorData = await response.json();
             console.error('Szczegóły błędu z serwera:', errorData);
@@ -75,7 +75,7 @@ async function startGame() {
                     'Authorization': `Bearer ${token}`
                 }
             });
-            
+
             if (userResponse.ok) {
                 console.log('Token działa poprawnie - możliwy inny problem z sesją');
                 const userData = await userResponse.json();
@@ -132,7 +132,7 @@ async function fetchWithAuth(url, options = {}) {
             window.location.href = '/';
             throw new Error('Sesja wygasła. Zaloguj się ponownie.');
         }
-        
+
         const errorData = await response.json();
         throw new Error(errorData.detail || 'Błąd zapytania');
     }
@@ -152,9 +152,9 @@ async function loadNextRound() {
     try {
         const response = await fetchWithAuth(`/api/rounds/next?session_id=${AppState.currentSessionId}`);
         const roundData = await response.json();
-        
+
         AppState.currentRound = roundData;
-        
+
         // Tutaj będzie kod do renderowania kurtyn
         // ...
 
@@ -184,7 +184,7 @@ async function selectCurtain(side) {
         });
 
         const resultData = await response.json();
-        
+
         // Tutaj będzie kod do pokazania wyniku
         // ...
 
@@ -192,11 +192,14 @@ async function selectCurtain(side) {
         AppState.startPrice = resultData.start_price;
         AppState.remainingPairs = resultData.remaining_pairs;
         AppState.sessionProfitFactor = resultData.session_profit_factor;
-        
+
+        // Handle result enum (API returns SUCCESS or FAILURE as string)
         if (resultData.result === 'SUCCESS') {
             AppState.successes++;
-        } else {
+        } else if (resultData.result === 'FAILURE') {
             AppState.failures++;
+        } else {
+            console.error('Nieznany wynik rundy:', resultData.result);
         }
 
         // Aktualizacja widoku statystyk

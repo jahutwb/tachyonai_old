@@ -106,15 +106,15 @@ def test_create_session(authorized_client, test_db, monkeypatch):
     monkeypatch.setattr(backend.sessions, "get_initial_pool", mock_get_initial_pool)
 
     response = authorized_client.post("/api/sessions")
-    assert response.status_code == 201
+    assert response.status_code == 200
     # Sprawdź, czy sesja została utworzona
     data = response.json()
-    assert "id" in data
-    assert data["status"] == "ACTIVE"
+    assert "session_id" in data
+    assert data["session_status"] == "ACTIVE"
 
 def test_get_session(authorized_client, test_session):
     """Test pobierania sesji."""
-    response = authorized_client.get(f"/sessions/{test_session.id}")
+    response = authorized_client.get(f"/api/sessions/{test_session.id}")
     assert response.status_code == 200
     data = response.json()
     assert data["id"] == test_session.id
@@ -122,7 +122,7 @@ def test_get_session(authorized_client, test_session):
 
 def test_get_rounds(authorized_client, test_session, test_round):
     """Test pobierania rund dla sesji."""
-    response = authorized_client.get(f"/sessions/{test_session.id}/rounds")
+    response = authorized_client.get(f"/api/sessions/{test_session.id}/rounds")
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 1
@@ -130,19 +130,19 @@ def test_get_rounds(authorized_client, test_session, test_round):
 
 def test_get_session_summary(authorized_client, test_session, test_round):
     """Test pobierania podsumowania sesji."""
-    response = authorized_client.get(f"/sessions/{test_session.id}/summary")
+    response = authorized_client.get(f"/api/sessions/{test_session.id}/summary")
     assert response.status_code == 200
     data = response.json()
-    assert data["session_id"] == test_session.id
+    assert data["id"] == test_session.id
 
 def test_submit_user_choice(authorized_client, test_round):
     """Test przesyłania wyboru użytkownika w rundzie."""
     choice_data = {
-        "session_id": test_round.session_id, 
+        "session_id": test_round.session_id,
         "round_id": test_round.id,
         "side": "LEFT"
     }
-    response = authorized_client.post(f"/rounds/choice", json=choice_data)
+    response = authorized_client.post(f"/api/rounds/choice", json=choice_data)
     assert response.status_code == 200
     data = response.json()
     assert data["round_id"] == test_round.id
@@ -206,12 +206,12 @@ def test_stimulus_url_in_round_response(authorized_client, test_db, test_user_in
 
     # Wywołanie endpoint'u do wysłania wyboru
     choice_data = {
-        "session_id": session.id, 
+        "session_id": session.id,
         "round_id": round.id,
         "side": "LEFT"
     }
-    response = authorized_client.post(f"/rounds/choice", json=choice_data)
-    
+    response = authorized_client.post(f"/api/rounds/choice", json=choice_data)
+
     assert response.status_code == 200
     data = response.json()
 

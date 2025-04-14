@@ -1,3 +1,7 @@
+"""
+Rounds router module for TachyonAI.
+This module provides endpoints for managing game rounds, including creation, retrieval, and processing user choices.
+"""
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 import random
@@ -6,6 +10,7 @@ import traceback
 import json
 from sqlalchemy.sql import func
 from typing import Dict, List, Optional
+from datetime import datetime
 
 from ..database import get_db
 from ..models import User, Session as SessionModel, Round, Image, ImageTypeEnum
@@ -13,133 +18,157 @@ from .. import schemas
 from ..auth import get_current_user
 from ..routers.sessions import generate_pool_with_genetic_algorithm
 
+# Initialize router and logger
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
 @router.get("/rounds/next", response_model=schemas.RoundCreate)
-def get_next_round(
+async def get_next_round(
     session_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Pobiera następną rundę dla sesji o podanym ID."""
-    try:
-        logger.info(f"Pobieranie następnej rundy dla sesji {session_id}")
-        
-        # Sprawdź czy sesja istnieje i należy do bieżącego użytkownika
-        session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
-        if not session:
-            logger.warning(f"Sesja {session_id} nie znaleziona")
-            raise HTTPException(status_code=404, detail="Sesja nie znaleziona")
+    """
+    Get the next round for a session by ID.
 
-        logger.info(f"Stan sesji {session_id} po pobraniu z bazy:")
+    Args:
+        session_id: ID of the session to get the next round for
+        current_user: Current authenticated user
+        db: Database session
+
+    Returns:
+        Next round data or a new round if there are no unfinished rounds
+
+    Raises:
+        HTTPException: If the session doesn't exist, isn't active, or has no available pairs
+    """
+    try:
+        logger.info(f"Getting next round for session {session_id}")
+
+        # Check if the session exists and belongs to the current user
+        session = db.query(SessionModel).filter(
+            SessionModel.id == session_id,
+            SessionModel.user_id == current_user.id
+        ).first()
+
+        if not session:
+            logger.warning(f"Session {session_id} not found or access denied")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found or access denied")
+
+        logger.info(f"Session {session_id} state after retrieval:")
         logger.info(f"Status: {session.status}")
         logger.info(f"Remaining pairs: {session.remaining_pairs}")
-        
+
         try:
-            # Bezpośrednie użycie pól JSON z modelu
+            # Direct use of JSON fields from the model
             pos_pool_json = session.pos_pool_json
             neg_pool_json = session.neg_pool_json
-            
-            # Zabezpieczenie przed None
+
+            # Guard against None values
             if pos_pool_json is None:
                 pos_pool_json = []
             if neg_pool_json is None:
                 neg_pool_json = []
-                
+
             logger.info(f"Pos pool: {[item['id'] for item in pos_pool_json]}")
             logger.info(f"Neg pool: {[item['id'] for item in neg_pool_json]}")
         except Exception as json_error:
-            logger.error(f"Błąd przetwarzania JSON: {str(json_error)}")
+            logger.error(f"Error processing JSON: {str(json_error)}")
             pos_pool_json = []
             neg_pool_json = []
 
-        if session.user_id != current_user.id:
-            logger.warning(f"Brak dostępu do sesji {session_id} dla użytkownika {current_user.id}")
-            raise HTTPException(status_code=403, detail="Brak dostępu do tej sesji")
-        
-        # Sprawdź, czy sesja jest aktywna
+        # Check if the session is active
         if session.status != "ACTIVE":
-            logger.warning(f"Sesja {session_id} nie jest aktywna - status: {session.status}")
-            raise HTTPException(status_code=400, detail="Sesja nie jest aktywna")
-        
-        # Sprawdź, czy pozostały jeszcze pary do rozegrania
+            logger.warning(f"Session {session_id} is not active - status: {session.status}")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Session is not active")
+
+        # Check if there are still pairs available to play
         if session.remaining_pairs <= 0:
-            logger.warning(f"Brak dostępnych par w sesji {session_id}")
-            raise HTTPException(status_code=400, detail="Brak dostępnych par w sesji")
-        
-        # Pobierz liczbę rund w sesji, aby ustalić numer rundy
+            logger.warning(f"No available pairs in session {session_id}")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No available pairs in session")
+
+        # Check if there is an unfinished round
+        unfinished_round = db.query(Round).filter(
+            Round.session_id == session_id,
+            Round.result == None
+        ).order_by(Round.id.desc()).first()
+
+        if unfinished_round:
+            logger.info(f"Found unfinished round {unfinished_round.id} for session {session_id}")
+            return unfinished_round
+
+        # Get the number of rounds in the session to determine the round number
         round_count = db.query(Round).filter(Round.session_id == session_id).count()
         round_number = round_count + 1
-        logger.info(f"Tworzenie rundy numer {round_number} dla sesji {session_id}")
-        
+        logger.info(f"Creating round number {round_number} for session {session_id}")
+
         try:
-            # Filtruj pule obrazów - tylko failures=0
+            # Filter image pools - only items with failures=0
             valid_pos_pool = [item for item in pos_pool_json if item.get("failures", 0) == 0]
             valid_neg_pool = [item for item in neg_pool_json if item.get("failures", 0) == 0]
-            
-            logger.info(f"Stan pul po filtrowaniu (tylko failures=0):")
-            logger.info(f"Pozytywne: {[item['id'] for item in valid_pos_pool]}")
-            logger.info(f"Negatywne: {[item['id'] for item in valid_neg_pool]}")
 
-            # Sprawdź, czy są dostępne pary obrazów
+            logger.info(f"Pool state after filtering (only failures=0):")
+            logger.info(f"Positive: {[item['id'] for item in valid_pos_pool]}")
+            logger.info(f"Negative: {[item['id'] for item in valid_neg_pool]}")
+
+            # Check if there are available image pairs
             if not valid_pos_pool or not valid_neg_pool:
-                logger.warning(f"Brak dostępnych par obrazów w sesji {session_id}")
-                # Zakończ sesję, jeśli nie ma dostępnych par
+                logger.warning(f"No available image pairs in session {session_id}")
+                # End the session if there are no available pairs
                 session.status = "COMPLETED"
                 session.remaining_pairs = 0
                 session.ended_at = func.now()
                 db.commit()
                 raise HTTPException(
-                    status_code=400,
-                    detail="Brak dostępnych par obrazów w sesji. Sesja została zakończona."
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="No available image pairs in session. Session has been completed."
                 )
-                
-            # Wybierz losowy obraz z przefiltrowanych pul
+
+            # Choose a random image from the filtered pools
             pos_item = random.choice(valid_pos_pool)
             neg_item = random.choice(valid_neg_pool)
-            
-            # Pobierz obiekty obrazów z bazy danych
+
+            # Retrieve image objects from the database
             pos_image = db.query(Image).filter(Image.id == pos_item["id"]).first()
             neg_image = db.query(Image).filter(Image.id == neg_item["id"]).first()
-            
+
             if not pos_image or not neg_image:
-                logger.error(f"Nie znaleziono obrazów w bazie danych: pos_id={pos_item['id']}, neg_id={neg_item['id']}")
-                raise HTTPException(status_code=500, detail="Nieprawidłowe referencje obrazów w puli")
-            
-            logger.info(f"Wybrano obrazy z puli (failures=0): pos_id={pos_image.id}, neg_id={neg_image.id}")
-            logger.info(f"Ścieżki obrazów: pos_path={pos_image.path}, neg_path={neg_image.path}")
-            
+                logger.error(f"Images not found in database: pos_id={pos_item['id']}, neg_id={neg_item['id']}")
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Invalid image references in pool")
+
+            logger.info(f"Selected images from pool (failures=0): pos_id={pos_image.id}, neg_id={neg_image.id}")
+            logger.info(f"Image paths: pos_path={pos_image.path}, neg_path={neg_image.path}")
+
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Błąd podczas wyboru obrazów z puli: {str(e)}")
+            logger.error(f"Error selecting images from pool: {str(e)}")
             logger.error(traceback.format_exc())
-            raise HTTPException(status_code=500, detail=f"Błąd podczas wyboru obrazów: {str(e)}")
-        
-        # Losowanie, która strona to kupno (BUY), a która sprzedaż (SELL)
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error selecting images: {str(e)}")
+
+        # Randomly determine which side is buy (BUY) and which is sell (SELL)
         left_action = random.choice(["BUY", "SELL"])
         right_action = "SELL" if left_action == "BUY" else "BUY"
-        logger.info(f"Przypisane akcje: left={left_action}, right={right_action}")
-        
-        # Utwórz nową rundę
+        logger.info(f"Assigned actions: left={left_action}, right={right_action}")
+
+        # Create a new round
         try:
             new_round = Round(
                 session_id=session_id,
                 round_number=round_number,
                 pos_image_id=pos_image.id,
                 neg_image_id=neg_image.id,
-                start_price=50000.0,  # Przykładowa wartość
+                start_price=50000.0,  # Example value
                 left_action=left_action,
                 right_action=right_action
             )
-            
+
             db.add(new_round)
             db.commit()
             db.refresh(new_round)
-            logger.info(f"Utworzono nową rundę id={new_round.id} dla sesji {session_id}")
-            
+            logger.info(f"Created new round id={new_round.id} for session {session_id}")
+
             return {
                 "id": new_round.id,
                 "session_id": new_round.session_id,
@@ -152,201 +181,214 @@ def get_next_round(
                 "created_at": new_round.created_at
             }
         except Exception as db_error:
-            logger.error(f"Błąd bazy danych podczas tworzenia rundy: {str(db_error)}")
+            logger.error(f"Database error while creating round: {str(db_error)}")
             logger.error(traceback.format_exc())
             db.rollback()
-            raise HTTPException(status_code=500, detail=f"Błąd bazy danych: {str(db_error)}")
-            
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Database error: {str(db_error)}")
+
     except HTTPException:
-        # Przepuść wyjątki HTTPException, aby zachować ich szczegóły
+        # Pass through HTTPException to preserve their details
         raise
     except Exception as e:
-        logger.error(f"Nieoczekiwany błąd w get_next_round: {str(e)}")
+        logger.error(f"Unexpected error in get_next_round: {str(e)}")
         logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Nieoczekiwany błąd: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Unexpected error: {str(e)}")
 
 
 @router.post("/rounds/choice", response_model=schemas.RoundResult)
-def submit_round_choice(
+async def submit_round_choice(
     choice: schemas.RoundChoice,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Przetwarza wybór użytkownika w rundzie i zwraca wynik."""
+    """
+    Process user's choice in a round and return the result.
+
+    Args:
+        choice: User's choice data
+        current_user: Current authenticated user
+        db: Database session
+
+    Returns:
+        Round result data
+
+    Raises:
+        HTTPException: If the round doesn't exist, the session doesn't belong to the user, or there's an error processing the choice
+    """
     import time
     start_time = time.time()
-    
+
     try:
-        logger.info(f"[TIMING] Rozpoczęcie przetwarzania wyboru dla rundy {choice.round_id}, sesji {choice.session_id}")
-        
-        # Sprawdź, czy runda istnieje
+        logger.info(f"[TIMING] Starting to process choice for round {choice.round_id}, session {choice.session_id}")
+
+        # Check if the round exists
         query_start = time.time()
         round_obj = db.query(Round).filter(Round.id == choice.round_id).first()
-        logger.info(f"[TIMING] Pobranie rundy: {time.time() - query_start:.3f}s")
-        
+        logger.info(f"[TIMING] Round retrieval: {time.time() - query_start:.3f}s")
+
         if not round_obj:
-            raise HTTPException(status_code=404, detail="Runda nie znaleziona")
-        
-        # Sprawdź, czy sesja należy do bieżącego użytkownika
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Round not found")
+
+        # Check if the session belongs to the current user
         query_start = time.time()
         session = db.query(SessionModel).filter(SessionModel.id == round_obj.session_id).first()
-        logger.info(f"[TIMING] Pobranie sesji: {time.time() - query_start:.3f}s")
-        
+        logger.info(f"[TIMING] Session retrieval: {time.time() - query_start:.3f}s")
+
         if not session or session.user_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Brak dostępu do tej rundy")
-        
-        # Określ akcję użytkownika
-        user_action = round_obj.left_action if choice.side == "LEFT" else round_obj.right_action
-        
-        # Symulacja zmiany ceny
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to this round")
+
+        # Determine user action
+        user_action = round_obj.left_action if choice.side == schemas.SideEnum.LEFT else round_obj.right_action
+
+        # Simulate price change
         price_change = random.uniform(-0.01, 0.01)
         end_price = round_obj.start_price * (1 + price_change)
-        
-        # Przygotuj kopie JSON-ów z puli
+
+        # Prepare copies of JSON pools
         json_start = time.time()
         try:
             pos_pool = json.loads(session.pos_pool_json) if isinstance(session.pos_pool_json, str) else session.pos_pool_json
             neg_pool = json.loads(session.neg_pool_json) if isinstance(session.neg_pool_json, str) else session.neg_pool_json
-            
-            # Zabezpieczenie przed None
+
+            # Guard against None values
             if pos_pool is None:
                 pos_pool = []
             if neg_pool is None:
                 neg_pool = []
-                
-            logger.info(f"[TIMING] Przetwarzanie JSON: {time.time() - json_start:.3f}s")
-            
+
+            logger.info(f"[TIMING] JSON processing: {time.time() - json_start:.3f}s")
+
         except Exception as e:
-            logger.error(f"Błąd przy odczycie JSON pool: {str(e)}")
+            logger.error(f"Error reading JSON pool: {str(e)}")
             pos_pool = []
             neg_pool = []
-        
-        # Oblicz wynik i zaktualizuj pule
+
+        # Calculate result and update pools
         update_start = time.time()
-        if (user_action == "BUY" and price_change > 0) or (user_action == "SELL" and price_change < 0):
-            result = "SUCCESS"
+        if (user_action == schemas.ActionEnum.BUY and price_change > 0) or (user_action == schemas.ActionEnum.SELL and price_change < 0):
+            result = schemas.RoundResultEnum.SUCCESS
             profit_fraction = abs(price_change)
             stimulus_id = round_obj.pos_image_id
-            
-            # Aktualizuj successes dla obu obrazów w pulach
+
+            # Update successes for both images in pools
             for item in pos_pool:
                 if item["id"] == round_obj.pos_image_id:
                     item["successes"] = item.get("successes", 0) + 1
-                    logger.info(f"SUCCESS: Zwiększam successes dla pos_image {item['id']}: {item['successes']}")
-            
+                    logger.info(f"SUCCESS: Increasing successes for pos_image {item['id']}: {item['successes']}")
+
             for item in neg_pool:
                 if item["id"] == round_obj.neg_image_id:
                     item["successes"] = item.get("successes", 0) + 1
-                    logger.info(f"SUCCESS: Zwiększam successes dla neg_image {item['id']}: {item['successes']}")
+                    logger.info(f"SUCCESS: Increasing successes for neg_image {item['id']}: {item['successes']}")
         else:
-            result = "FAILURE"
+            result = schemas.RoundResultEnum.FAILURE
             profit_fraction = -abs(price_change)
             stimulus_id = round_obj.neg_image_id
-            
-            # Aktualizuj failures dla obu obrazów w pulach
+
+            # Update failures for both images in pools
             for item in pos_pool:
                 if item["id"] == round_obj.pos_image_id:
                     item["failures"] = item.get("failures", 0) + 1
-                    logger.info(f"FAILURE: Zwiększam failures dla pos_image {item['id']}: {item['failures']}")
-            
+                    logger.info(f"FAILURE: Increasing failures for pos_image {item['id']}: {item['failures']}")
+
             for item in neg_pool:
                 if item["id"] == round_obj.neg_image_id:
                     item["failures"] = item.get("failures", 0) + 1
-                    logger.info(f"FAILURE: Zwiększam failures dla neg_image {item['id']}: {item['failures']}")
-        
-        logger.info(f"[TIMING] Aktualizacja pul: {time.time() - update_start:.3f}s")
-        
-        # Aktualizuj sesję - wymuszamy wykrycie zmian w polach JSON
+                    logger.info(f"FAILURE: Increasing failures for neg_image {item['id']}: {item['failures']}")
+
+        logger.info(f"[TIMING] Pool updates: {time.time() - update_start:.3f}s")
+
+        # Update session - force detection of changes in JSON fields
         session.session_profit_factor *= (1 + profit_fraction)
-        
-        # Aktualizujemy pola JSON w sesji - bezpośrednie przypisanie
+
+        # Update JSON fields in session - direct assignment
         session.pos_pool_json = pos_pool
         session.neg_pool_json = neg_pool
-        
-        # Oznaczamy pola jako zmodyfikowane
+
+        # Mark fields as modified
         from sqlalchemy.orm import attributes
         attributes.flag_modified(session, "pos_pool_json")
         attributes.flag_modified(session, "neg_pool_json")
-        
-        # Sprawdź liczbę dostępnych par (liczba obrazów z failures=0)
+
+        # Check number of available pairs (number of images with failures=0)
         pairs_start = time.time()
         valid_pos_pool = [item for item in pos_pool if item.get("failures", 0) == 0]
         valid_neg_pool = [item for item in neg_pool if item.get("failures", 0) == 0]
-        
+
         available_pairs = min(len(valid_pos_pool), len(valid_neg_pool))
-        logger.info(f"[TIMING] Obliczenie dostępnych par: {time.time() - pairs_start:.3f}s")
-        logger.info(f"Dostępne pary po aktualizacji: {available_pairs} (valid_pos: {len(valid_pos_pool)}, valid_neg: {len(valid_neg_pool)})")
-        
-        # Aktualizuj remaining_pairs na podstawie rzeczywistej liczby dostępnych par
+        logger.info(f"[TIMING] Available pairs calculation: {time.time() - pairs_start:.3f}s")
+        logger.info(f"Available pairs after update: {available_pairs} (valid_pos: {len(valid_pos_pool)}, valid_neg: {len(valid_neg_pool)})")
+
+        # Update remaining_pairs based on actual number of available pairs
         session.remaining_pairs = available_pairs
-        
-        # Zakończ sesję, tylko jeśli nie ma dostępnych par
+
+        # End session only if there are no available pairs
         if available_pairs <= 0:
-            session.status = "COMPLETED"
+            session.status = schemas.SessionStatusEnum.COMPLETED
             session.ended_at = func.now()
-            logger.info(f"Kończę sesję {session.id} - brak dostępnych par")
-            
-            # Nowa pula będzie generowana dopiero po kliknięciu przycisku "Podsumowanie sesji"
-            # zgodnie ze specyfikacją, a nie automatycznie po zakończeniu sesji
-        
-        # Zapisz wszystkie zmiany w jednej transakcji
+            logger.info(f"Ending session {session.id} - no available pairs")
+
+            # New pool will be generated only after clicking the "Session Summary" button
+            # according to the specification, not automatically after session completion
+
+        # Save all changes in one transaction
         commit_start = time.time()
         db.commit()
-        logger.info(f"[TIMING] Zapis zmian do bazy: {time.time() - commit_start:.3f}s")
-        
-        # Odśwież wszystkie obiekty
+        logger.info(f"[TIMING] Saving changes to database: {time.time() - commit_start:.3f}s")
+
+        # Refresh all objects
         db.refresh(session)
         db.refresh(round_obj)
-        
-        # Aktualizuj statystyki obrazów w bazie
+
+        # Update image statistics in the database
         images_start = time.time()
         pos_image = db.query(Image).filter(Image.id == round_obj.pos_image_id).first()
         neg_image = db.query(Image).filter(Image.id == round_obj.neg_image_id).first()
-        
-        if result == "SUCCESS":
+
+        if result == schemas.RoundResultEnum.SUCCESS:
             pos_image.total_successes += 1
             neg_image.total_successes += 1
         else:
             pos_image.total_failures += 1
             neg_image.total_failures += 1
-        
+
         pos_image.total_profit_factor *= (1 + profit_fraction)
         neg_image.total_profit_factor *= (1 + profit_fraction)
-        
-        # Zapisz zmiany w obrazach
+
+        # Save changes to images
         db.commit()
-        logger.info(f"[TIMING] Aktualizacja obrazów: {time.time() - images_start:.3f}s")
-        
-        # Zaktualizuj obiekt rundy
+        logger.info(f"[TIMING] Image update: {time.time() - images_start:.3f}s")
+
+        # Update round object
         round_obj.user_action = user_action
         round_obj.end_price = end_price
         round_obj.profit_fraction = profit_fraction
         round_obj.result = result
         round_obj.stimulus_id = stimulus_id
         round_obj.processed_at = func.now()
-        
+
         db.commit()
-        logger.info(f"[TIMING] Całkowity czas przetwarzania wyboru: {time.time() - start_time:.3f}s")
-        
-        # Pobierz URL obrazka bodźca dla pełnej rozdzielczości
+        logger.info(f"[TIMING] Total choice processing time: {time.time() - start_time:.3f}s")
+
+        # Get stimulus image URL for full resolution
         stimulus = db.query(Image).filter(Image.id == stimulus_id).first()
-        
-        # Użyj pełnego URL z tokenem, aby obrazek był dostępny bez dodatkowej autoryzacji
+
+        # Use full URL with token so the image is accessible without additional authorization
         from ..auth import create_access_token
         from starlette.config import Config
-        
-        # Utwórz token dla obrazka
+
+        # Create token for the image
         token_data = {"sub": current_user.username}
         access_token = create_access_token(token_data)
-        
-        # Stwórz pełny URL
-        host_url = "http://127.0.0.1:8000"  # Można pobrać z konfiguracji lub zmiennych środowiskowych
+
+        # Create full URL
+        host_url = "http://127.0.0.1:8000"  # Can be retrieved from configuration or environment variables
         stimulus_url = f"{host_url}/api/images/{stimulus_id}/full?token={access_token}" if stimulus else None
-        
-        # Dodajemy logowanie ścieżki bodźca
+
+        # Add stimulus path logging
         if stimulus:
-            logger.info(f"Wyświetlony bodziec: {stimulus.path}")
-        
+            logger.info(f"Displayed stimulus: {stimulus.path}")
+
         return {
             "round_id": round_obj.id,
             "session_id": session.id,
@@ -354,17 +396,16 @@ def submit_round_choice(
             "end_price": end_price,
             "profit_fraction": profit_fraction,
             "result": result,
-            "stimulus_id": stimulus_id,
             "session_status": session.status,
             "remaining_pairs": session.remaining_pairs,
             "session_profit_factor": session.session_profit_factor,
             "stimulus_url": stimulus_url
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Błąd w submit_round_choice: {str(e)}")
+        logger.error(f"Error in submit_round_choice: {str(e)}")
         logger.error(traceback.format_exc())
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Błąd przetwarzania wyboru: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error processing choice: {str(e)}")

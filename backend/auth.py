@@ -10,13 +10,14 @@ from dotenv import load_dotenv
 
 from .database import get_db
 from . import models, schemas
+from .config import Config, ConfigSettingEnum
 
 load_dotenv()
 
 # Konfiguracja JWT
-SECRET_KEY = os.getenv("JWT_SECRET", "tajny_klucz_dla_jwt_token")
-ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = 1440  # 24 godziny zamiast 30 minut
+SECRET_KEY = Config.get_secret_key()
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = Config.get_access_token_expire_minutes()
 
 # Konfiguracja haszowania hasła
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -94,4 +95,4 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 
 def get_current_active_user(current_user: models.User = Depends(get_current_user)):
     """Pobiera bieżącego aktywnego użytkownika."""
-    return current_user 
+    return current_user

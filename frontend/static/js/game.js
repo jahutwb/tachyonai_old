@@ -1,6 +1,6 @@
 /**
  * TachyonAI - Game Module
- * 
+ *
  * Implementacja interfejsu gry przetwarzającego rundy, wybory użytkownika i wyniki.
  * Architektura oparta na maszynie stanów i jasnym rozdzieleniu odpowiedzialności.
  */
@@ -35,28 +35,28 @@ const DOM = {
   // Kontenery faz
   PHASE_SELECT: '#game-phase-select',
   PHASE_RESULT: '#game-phase-result',
-  
+
   // Kurtyny
   LEFT_CURTAIN: '#left-curtain',
   RIGHT_CURTAIN: '#right-curtain',
   LEFT_ACTION: '#left-action',
   RIGHT_ACTION: '#right-action',
-  
+
   // Wyniki
   RESULT_STATUS: '#result-status',
   STIMULUS_IMAGE: '#stimulus-image',
-  
+
   // Przyciski
   NEXT_ROUND_BUTTON: '#next-round-button',
   SUMMARY_BUTTON: '#summary-button',
-  
+
   // Statystyki
   SUCCESS_COUNT: '#success-count',
   FAILURE_COUNT: '#failure-count',
   SUCCESS_RATE: '#success-rate',
   PROFIT_FACTOR: '#profit-factor',
   REMAINING_PAIRS: '#remaining-pairs',
-  
+
   // Overlay ładowania
   LOADING_OVERLAY: '#loading-overlay',
   LOADING_MESSAGE: '#loading-message'
@@ -77,7 +77,7 @@ class Logger {
       }
     }
   }
-  
+
   static info(message, data = null) {
     if (CONFIG.DEBUG) {
       if (data) {
@@ -87,20 +87,20 @@ class Logger {
       }
     }
   }
-  
+
   static error(message, error = null) {
     console.error(`%c${message}`, 'color: #e74c3c', error);
     if (error && error.stack) {
       console.error(error.stack);
     }
   }
-  
+
   static state(stateName, data = null) {
     if (CONFIG.DEBUG) {
       console.log(`%c[Stan: ${stateName}]`, 'color: #2ecc71; font-weight: bold', data);
     }
   }
-  
+
   static api(method, url, data = null) {
     if (CONFIG.DEBUG) {
       console.log(`%c[API] ${method} ${url}`, 'color: #9b59b6', data);
@@ -119,17 +119,17 @@ class ApiService {
    */
   async fetchWithAuth(url, options = {}) {
     Logger.api(options.method || 'GET', url, options.body);
-    
+
     const token = localStorage.getItem('token');
     if (!token) {
       window.location.href = '/login';
       throw new Error('Brak tokenu autoryzacyjnego');
     }
-    
+
     const controller = new AbortController();
     const timeoutValue = options.timeout || CONFIG.API_TIMEOUT;
     const timeoutId = setTimeout(() => controller.abort(), timeoutValue);
-    
+
     try {
       const response = await fetch(url, {
         ...options,
@@ -140,16 +140,16 @@ class ApiService {
         },
         signal: controller.signal
       });
-      
+
       if (!response.ok) {
         throw new Error(`Błąd HTTP: ${response.status} ${response.statusText}`);
       }
-      
+
       // Dla zapytań bez odpowiedzi (np. DELETE)
       if (response.status === 204) {
         return null;
       }
-      
+
       return await response.json();
     } catch (error) {
       if (error.name === 'AbortError') {
@@ -160,7 +160,7 @@ class ApiService {
       clearTimeout(timeoutId);
     }
   }
-  
+
   /**
    * Pobiera aktualną cenę
    */
@@ -173,7 +173,7 @@ class ApiService {
       throw error;
     }
   }
-  
+
   /**
    * Pobiera nową rundę dla sesji
    */
@@ -185,18 +185,18 @@ class ApiService {
       throw error;
     }
   }
-  
+
   /**
    * Wysyła wybór użytkownika i otrzymuje wynik
    */
   async submitChoice(sessionId, roundId, side) {
     try {
-      const data = { 
-        session_id: sessionId, 
-        round_id: roundId, 
-        side: side 
+      const data = {
+        session_id: sessionId,
+        round_id: roundId,
+        side: side
       };
-      
+
       return await this.fetchWithAuth('/api/rounds/choice', {
         method: 'POST',
         body: JSON.stringify(data)
@@ -206,7 +206,7 @@ class ApiService {
       throw error;
     }
   }
-  
+
   /**
    * Pobiera aktualny stan sesji
    */
@@ -220,7 +220,7 @@ class ApiService {
       throw error;
     }
   }
-  
+
   /**
    * Sprawdza status sesji (istniejąca, oczekująca, nowa)
    */
@@ -265,7 +265,7 @@ class ApiService {
       throw error;
     }
   }
-  
+
   /**
    * Pobiera rundy dla sesji
    */
@@ -290,7 +290,7 @@ class UIController {
    */
   static showPhase(phaseSelector) {
     const phases = [DOM.PHASE_SELECT, DOM.PHASE_RESULT];
-    
+
     phases.forEach(selector => {
       const element = document.querySelector(selector);
       if (element) {
@@ -298,41 +298,41 @@ class UIController {
       }
     });
   }
-  
+
   /**
    * Przygotowuje interfejs do wyświetlenia fazy wyboru
    */
   static prepareChoicePhase() {
     console.log('[Debug] Przygotowywanie fazy wyboru...');
     this.showPhase(DOM.PHASE_SELECT);
-    
+
     // Reset stanu kurtyn
     const leftCurtain = document.querySelector(DOM.LEFT_CURTAIN);
     const rightCurtain = document.querySelector(DOM.RIGHT_CURTAIN);
-    
+
     console.log('[Debug] Elementy kurtyn:', { leftCurtain, rightCurtain });
-    
+
     if (leftCurtain) {
       leftCurtain.classList.remove('curtain-expanded', 'curtain-hidden');
       leftCurtain.style.display = 'flex'; // Upewnij się, że kurtyna jest widoczna
     } else {
       console.error('[Debug] Nie znaleziono elementu lewej kurtyny!');
     }
-    
+
     if (rightCurtain) {
       rightCurtain.classList.remove('curtain-expanded', 'curtain-hidden');
       rightCurtain.style.display = 'flex'; // Upewnij się, że kurtyna jest widoczna
     } else {
       console.error('[Debug] Nie znaleziono elementu prawej kurtyny!');
     }
-    
+
     // Ukryj teksty akcji
     const leftAction = document.querySelector(DOM.LEFT_ACTION);
     const rightAction = document.querySelector(DOM.RIGHT_ACTION);
-    
+
     if (leftAction) leftAction.style.display = 'none';
     if (rightAction) rightAction.style.display = 'none';
-    
+
     // Upewnij się, że kontener gry jest widoczny
     const gameContainer = document.querySelector(DOM.PHASE_SELECT);
     if (gameContainer) {
@@ -341,24 +341,24 @@ class UIController {
     } else {
       console.error('[Debug] Nie znaleziono kontenera gry!');
     }
-    
+
     console.log('[Debug] Faza wyboru przygotowana');
   }
-  
+
   /**
    * Przygotowuje interfejs do wyświetlenia fazy wyniku
    */
   static prepareResultPhase() {
     this.showPhase(DOM.PHASE_RESULT);
   }
-  
+
   /**
    * Rozszerza wybraną kurtynę i ukrywa drugą
    */
   static expandCurtain(side) {
     const leftCurtain = document.querySelector(DOM.LEFT_CURTAIN);
     const rightCurtain = document.querySelector(DOM.RIGHT_CURTAIN);
-    
+
     if (side === 'LEFT') {
       leftCurtain.classList.add('curtain-expanded');
       rightCurtain.classList.add('curtain-hidden');
@@ -367,7 +367,7 @@ class UIController {
       leftCurtain.classList.add('curtain-hidden');
     }
   }
-  
+
   /**
    * Wyświetla wynik i bodziec
    */
@@ -378,29 +378,44 @@ class UIController {
         // Konwertujemy profit_fraction na procent
         const profitPercent = (profitFraction * 100).toFixed(2);
         const profitSign = profitPercent >= 0 ? '+' : '';
-        resultStatus.textContent = `${result === 'SUCCESS' ? 'Sukces' : 'Porażka'}: ${profitSign}${profitPercent}%`;
-        resultStatus.className = result === 'SUCCESS' ? 'success' : 'failure';
+
+        // Obsługa wyniku jako enum (API zwraca SUCCESS lub FAILURE jako string)
+        let resultText, resultClass;
+        if (result === 'SUCCESS') {
+            resultText = 'Sukces';
+            resultClass = 'success';
+        } else if (result === 'FAILURE') {
+            resultText = 'Porażka';
+            resultClass = 'failure';
+        } else {
+            Logger.error('Nieznany wynik rundy', result);
+            resultText = 'Nieznany wynik';
+            resultClass = 'failure';
+        }
+
+        resultStatus.textContent = `${resultText}: ${profitSign}${profitPercent}%`;
+        resultStatus.className = resultClass;
     }
 
     // Wyświetlenie obrazu bodźca
     const stimulusImage = document.querySelector(DOM.STIMULUS_IMAGE);
     if (stimulusImage && stimulusUrl) {
         stimulusImage.style.display = 'block';
-        
+
         // Upewnij się, że używamy /full zamiast /thumbnail dla większych obrazów
         if (!stimulusUrl.includes('/full')) {
             stimulusUrl = stimulusUrl.replace('/thumbnail', '/full');
         }
-        
+
         stimulusImage.src = stimulusUrl;
-        
+
         console.log('[Debug] URL obrazu bodźca:', stimulusUrl);
-        
+
         // Dodaj możliwość powiększenia obrazu po kliknięciu
         stimulusImage.onclick = function() {
             window.open(stimulusUrl, '_blank');
         };
-        
+
         stimulusImage.onerror = function() {
             Logger.error('Błąd ładowania obrazu bodźca', { url: stimulusUrl });
             stimulusImage.src = '/static/images/default-stimulus.png';
@@ -410,7 +425,7 @@ class UIController {
         };
     }
   }
-  
+
   /**
    * Aktualizuje statystyki na podstawie stanu gry
    */
@@ -421,10 +436,10 @@ class UIController {
     const successRate = document.querySelector(DOM.SUCCESS_RATE);
     const profitFactor = document.querySelector(DOM.PROFIT_FACTOR);
     const remainingPairs = document.querySelector(DOM.REMAINING_PAIRS);
-    
+
     if (successCount) successCount.textContent = stats.successes;
     if (failureCount) failureCount.textContent = stats.failures;
-    
+
     const total = stats.successes + stats.failures;
     if (successRate && total > 0) {
       const rate = (stats.successes / total) * 100;
@@ -432,44 +447,44 @@ class UIController {
     } else if (successRate) {
       successRate.textContent = '0%';
     }
-    
+
     if (profitFactor) {
       const profitPercentage = (stats.sessionProfitFactor - 1) * 100;
       profitFactor.textContent = `${profitPercentage.toFixed(2)}%`;
     }
-    
+
     if (remainingPairs) remainingPairs.textContent = stats.remainingPairs;
   }
-  
+
   /**
    * Aktualizuje widoczność przycisków na podstawie stanu sesji
    */
   static updateButtons(isSessionCompleted) {
     const nextRoundButton = document.querySelector(DOM.NEXT_ROUND_BUTTON);
     const summaryButton = document.querySelector(DOM.SUMMARY_BUTTON);
-    
+
     if (nextRoundButton) {
       nextRoundButton.style.display = isSessionCompleted ? 'none' : 'inline-block';
     }
-    
+
     if (summaryButton) {
       summaryButton.style.display = isSessionCompleted ? 'inline-block' : 'none';
     }
   }
-  
+
   /**
    * Pokazuje overlay ładowania z opcjonalnym komunikatem
    */
   static showLoadingOverlay(message = 'Ładowanie...') {
     const overlay = document.querySelector(DOM.LOADING_OVERLAY);
     const messageEl = document.querySelector(DOM.LOADING_MESSAGE);
-    
+
     if (overlay && messageEl) {
       messageEl.textContent = message;
       overlay.style.display = 'flex';
     }
   }
-  
+
   /**
    * Aktualizuje komunikat ładowania
    */
@@ -479,7 +494,7 @@ class UIController {
       messageEl.innerHTML = message;
     }
   }
-  
+
   /**
    * Ukrywa overlay ładowania
    */
@@ -489,7 +504,7 @@ class UIController {
       overlay.style.display = 'none';
     }
   }
-  
+
   /**
    * Wyświetla dialog wyboru sesji
    */
@@ -497,15 +512,15 @@ class UIController {
     // Tworzymy warstwę overlay
     const overlay = document.createElement('div');
     overlay.className = 'dialog-overlay';
-    
+
     // Tworzymy kontener dla dialogu
     const dialogContainer = document.createElement('div');
     dialogContainer.className = 'dialog-container';
-    
+
     let dialogContent = `
       <h2>Wybór sesji</h2>
     `;
-    
+
     if (sessionData.session_status === 'ACTIVE') {
       // Aktywna sesja
       dialogContent += `
@@ -520,7 +535,7 @@ class UIController {
           </ul>
         </div>
       `;
-      
+
       if (sessionData.has_unfinished_round) {
         dialogContent += `
           <div class="info-box">
@@ -528,13 +543,13 @@ class UIController {
           </div>
         `;
       }
-      
+
     } else if (sessionData.session_status === 'PENDING') {
       // Oczekująca sesja (wygenerowana pula)
       const poolStats = sessionData.new_pool_stats || sessionData.pool_origin_stats || { pos_origins: {}, neg_origins: {} };
       const posOrigins = poolStats.positive || poolStats.pos_origins || {};
       const negOrigins = poolStats.negative || poolStats.neg_origins || {};
-      
+
       dialogContent += `
         <div class="session-stats">
           <p>Wygenerowano nową pulę bodźców:</p>
@@ -558,7 +573,7 @@ class UIController {
           </div>
         </div>
       `;
-      
+
       // Informacja o algorytmie quasi-genetycznym
       if ((posOrigins.child || 0) > 0 || (negOrigins.child || 0) > 0) {
         dialogContent += `
@@ -595,10 +610,10 @@ class UIController {
         </div>
       `;
     }
-    
+
     // Przyciski akcji
     dialogContent += `<div class="dialog-buttons">`;
-    
+
     if (sessionData.session_status === 'ACTIVE') {
       dialogContent += `
         <button id="resume-session-btn" class="button primary-button">Kontynuuj sesję</button>
@@ -618,18 +633,18 @@ class UIController {
         <button id="new-session-btn" class="button primary-button">Utwórz nową sesję</button>
       `;
     }
-    
+
     dialogContent += `</div>`;
-    
+
     // Ustawiamy treść dialogu
     dialogContainer.innerHTML = dialogContent;
-    
+
     // Dodajemy kontener do overlaya
     overlay.appendChild(dialogContainer);
-    
+
     // Dodajemy overlay do DOM
     document.body.appendChild(overlay);
-    
+
     // Zwracamy obiekt z overlayem i kontenerem dla łatwiejszego zarządzania
     return {
       overlay: overlay,
@@ -642,13 +657,13 @@ class UIController {
       }
     };
   }
-  
+
   /**
    * Usuwa dialog wyboru sesji
    */
   static removeSessionDialog(dialog) {
     if (!dialog) return;
-    
+
     // Dialog może być bezpośrednim elementem DOM lub obiektem z właściwością overlay
     if (dialog.overlay) {
       document.body.removeChild(dialog.overlay);
@@ -662,13 +677,13 @@ class UIController {
       console.error('Nie można usunąć dialogu:', dialog);
     }
   }
-  
+
   /**
    * Pokazuje animację ładowania podczas generowania nowej puli
    */
   static showPoolGenerationSpinner() {
     this.showLoadingOverlay('Generowanie nowej puli bodźców...');
-    
+
     // Dodaj animowaną kropkę
     const messageElement = document.querySelector(DOM.LOADING_MESSAGE);
     if (messageElement) {
@@ -676,19 +691,19 @@ class UIController {
       dotAnimation.id = 'loading-dots';
       dotAnimation.textContent = '...';
       messageElement.appendChild(dotAnimation);
-      
+
       // Animuj kropki
       let dots = 0;
       const animationInterval = setInterval(() => {
         dots = (dots + 1) % 4;
         dotAnimation.textContent = '.'.repeat(dots);
       }, 500);
-      
+
       // Zapisz interval, aby móc go później wyczyścić
       this.poolGenerationInterval = animationInterval;
     }
   }
-  
+
   /**
    * Zatrzymuje animację ładowania puli
    */
@@ -711,10 +726,10 @@ class GameController {
     // Inicjalizacja stanu
     this.state = GameStates.INITIALIZING;
     Logger.state(this.state);
-    
+
     // Referencje do innych komponentów
     this.apiService = new ApiService();
-    
+
     // Dane gry
     this.data = {
       sessionId: null,
@@ -730,7 +745,7 @@ class GameController {
         sessionProfitFactor: 0
       }
     };
-    
+
     // Inicjalizacja gry
     this.initialize();
   }
@@ -741,21 +756,21 @@ class GameController {
   async initialize() {
     try {
       UIController.showLoadingOverlay('Inicjalizacja gry...');
-      
+
       // Sprawdź czy jest sessionId w URL
       const urlParams = new URLSearchParams(window.location.search);
       const sessionId = urlParams.get('session_id');
-      
+
       if (sessionId) {
         UIController.updateLoadingMessage('Ładowanie istniejącej sesji...');
         Logger.info(`Znaleziono ID sesji w URL: ${sessionId}`);
-        
+
         // Jeśli mamy ID sesji, pobierz jej stan
         try {
           this.data.sessionId = parseInt(sessionId);
           const sessionInfo = await this.apiService.resumeSession(sessionId);
           await this.setupSessionData(sessionInfo);
-          
+
           // Podłącz listenery zdarzeń po załadowaniu sesji
           this.attachEventListeners();
         } catch (error) {
@@ -766,15 +781,15 @@ class GameController {
       } else {
         // Jeśli nie ma ID sesji w URL, sprawdź czy istnieje aktywna sesja lub stwórz nową
         await this.checkAndCreateSession();
-        
+
         // Podłącz listenery zdarzeń po utworzeniu/załadowaniu sesji
         this.attachEventListeners();
       }
-      
+
     } catch (error) {
       Logger.error('Błąd podczas inicjalizacji gry', error);
       UIController.hideLoadingOverlay();
-      
+
       // Pokaż komunikat o błędzie
       const errorMessage = document.createElement('div');
       errorMessage.className = 'error-message';
@@ -784,7 +799,7 @@ class GameController {
         <button id="reload-btn" class="button primary-button">Spróbuj ponownie</button>
       `;
       document.querySelector('#game-container').appendChild(errorMessage);
-      
+
       // Dodaj obsługę przycisku ponownego ładowania
       document.querySelector('#reload-btn').addEventListener('click', () => {
         window.location.reload();
@@ -799,16 +814,16 @@ class GameController {
     try {
       // Ustawienie ID sesji
       this.data.sessionId = sessionData.id;
-      
+
       // Aktualizacja statystyk sesji
       this.data.stats.successes = sessionData.success_count || 0;
       this.data.stats.failures = sessionData.failure_count || 0;
       this.data.stats.remainingPairs = sessionData.remaining_pairs || 0;
       this.data.stats.sessionProfitFactor = sessionData.session_profit_factor || 1.0;
-      
+
       // Aktualizacja UI
       UIController.updateStats(this.data.stats);
-      
+
       // Jeśli mamy niedokończoną rundę, załaduj ją
       if (sessionData.has_unfinished_round) {
         Logger.info(`Wznawianie niedokończonej rundy: ${sessionData.unfinished_round_id}`);
@@ -820,7 +835,7 @@ class GameController {
         UIController.updateLoadingMessage('Ładowanie nowej rundy...');
         await this.loadNewRound();
       }
-      
+
       // Sprawdź, czy sesja jest zakończona
       if (sessionData.status === "COMPLETED") {
         this.state = GameStates.SESSION_COMPLETED;
@@ -833,7 +848,7 @@ class GameController {
           Logger.state(GameStates.WAITING_FOR_CHOICE);
         }
       }
-      
+
       // Ukryj overlay ładowania
       UIController.hideLoadingOverlay();
     } catch (error) {
@@ -842,35 +857,35 @@ class GameController {
       throw error;
     }
   }
-  
+
   /**
    * Ładuje nową rundę
    */
   async loadNewRound() {
     UIController.showLoadingOverlay('Ładowanie rundy...');
-    
+
     try {
       // Pobierz nową rundę z API
       const roundData = await this.apiService.getNewRound(this.data.sessionId);
-      
+
       // Zaktualizuj stan gry
       this.data.currentRound = roundData;
       this.data.prices.startPrice = roundData.start_price;
       this.data.prices.endPrice = 0;
-      
+
       // Logowanie stanu
       Logger.log('Załadowano nową rundę', roundData);
-      
+
       // Przygotuj interfejs
       UIController.prepareChoicePhase();
-      
+
       // Podłącz listenery kurtyn
       this.attachEventListeners();
-      
+
       // Przejdź do stanu oczekiwania na wybór
       this.state = GameStates.WAITING_FOR_CHOICE;
       Logger.state(GameStates.WAITING_FOR_CHOICE);
-      
+
       // Ukryj loading
       UIController.hideLoadingOverlay();
     } catch (error) {
@@ -885,35 +900,35 @@ class GameController {
       throw error;
     }
   }
-  
+
   /**
    * Ładuje rundę o podanym ID
    */
   async loadRound(roundId) {
     UIController.showLoadingOverlay('Ładowanie rundy...');
-    
+
     try {
       // Pobierz rundę z API
       const roundData = await this.apiService.getRound(roundId);
-      
+
       // Zaktualizuj stan gry
       this.data.currentRound = roundData;
       this.data.prices.startPrice = roundData.start_price;
       this.data.prices.endPrice = 0;
-      
+
       // Logowanie stanu
       Logger.log('Załadowano rundę', roundData);
-      
+
       // Przygotuj interfejs
       UIController.prepareChoicePhase();
-      
+
       // Podłącz listenery kurtyn
       this.attachEventListeners();
-      
+
       // Przejdź do stanu oczekiwania na wybór
       this.state = GameStates.WAITING_FOR_CHOICE;
       Logger.state(GameStates.WAITING_FOR_CHOICE);
-      
+
       // Ukryj loading
       UIController.hideLoadingOverlay();
     } catch (error) {
@@ -921,7 +936,7 @@ class GameController {
       throw error;
     }
   }
-  
+
   /**
    * Podłącza nasłuchiwanie zdarzeń
    */
@@ -929,9 +944,9 @@ class GameController {
     // Kliknięcia kurtyn
     const leftCurtain = document.querySelector(DOM.LEFT_CURTAIN);
     const rightCurtain = document.querySelector(DOM.RIGHT_CURTAIN);
-    
+
     console.log('[Debug] Przypisywanie zdarzeń kliknięcia do kurtyn:', { leftCurtain, rightCurtain });
-    
+
     if (leftCurtain) {
       // Usuwamy stare listeners, aby uniknąć duplikacji
       leftCurtain.removeEventListener('click', () => this.handleCurtainClick('LEFT'));
@@ -940,7 +955,7 @@ class GameController {
     } else {
       console.error('[Debug] Nie można znaleźć lewej kurtyny do przypisania zdarzenia!');
     }
-    
+
     if (rightCurtain) {
       // Usuwamy stare listeners, aby uniknąć duplikacji
       rightCurtain.removeEventListener('click', () => this.handleCurtainClick('RIGHT'));
@@ -949,20 +964,20 @@ class GameController {
     } else {
       console.error('[Debug] Nie można znaleźć prawej kurtyny do przypisania zdarzenia!');
     }
-    
+
     // Przycisk następnej rundy
     const nextRoundButton = document.querySelector(DOM.NEXT_ROUND_BUTTON);
     if (nextRoundButton) {
       nextRoundButton.addEventListener('click', () => this.handleNextRoundClick());
     }
-    
+
     // Przycisk podsumowania
     const summaryButton = document.querySelector(DOM.SUMMARY_BUTTON);
     if (summaryButton) {
       summaryButton.addEventListener('click', () => this.handleSummaryClick());
     }
   }
-  
+
   /**
    * Obsługuje kliknięcie kurtyny
    */
@@ -972,27 +987,27 @@ class GameController {
       Logger.log(`Ignoruję kliknięcie kurtyny ${side} - nieprawidłowy stan: ${this.state}`);
       return;
     }
-    
+
     try {
       // Przejdź do stanu przetwarzania wyboru
       this.state = GameStates.PROCESSING_CHOICE;
       Logger.state(GameStates.PROCESSING_CHOICE, { side });
-      
+
       // Pokaż wizualnie wybraną kurtynę
       UIController.expandCurtain(side);
-      
+
       // Przetwórz wybór
       await this.processChoice(side);
     } catch (error) {
       Logger.error('Błąd podczas obsługi kliknięcia kurtyny', error);
       alert('Wystąpił błąd podczas przetwarzania wyboru. Spróbuj ponownie.');
-      
+
       // Resetuj stan i wróć do oczekiwania na wybór
       this.state = GameStates.WAITING_FOR_CHOICE;
       UIController.prepareChoicePhase();
     }
   }
-  
+
   /**
    * Obsługuje kliknięcie przycisku następnej rundy
    */
@@ -1000,7 +1015,7 @@ class GameController {
     if (this.state !== GameStates.SHOWING_RESULT) {
       return;
     }
-    
+
     try {
       this.state = GameStates.LOADING_ROUND;
       Logger.state(GameStates.LOADING_ROUND);
@@ -1010,7 +1025,7 @@ class GameController {
       alert('Nie udało się załadować nowej rundy. Spróbuj ponownie.');
     }
   }
-  
+
   /**
    * Obsługuje kliknięcie przycisku podsumowania
    */
@@ -1018,56 +1033,59 @@ class GameController {
     if (this.state !== GameStates.SHOWING_RESULT && this.state !== GameStates.SESSION_COMPLETED) {
       return;
     }
-    
+
     // Pobierz ID sesji
     const sessionId = this.data.sessionId;
-    
+
     // Najpierw przekieruj do podsumowania
     window.location.href = `/summary?session_id=${sessionId}`;
   }
-  
+
   /**
    * Przetwarza wybór użytkownika
    */
   async processChoice(side) {
     UIController.showLoadingOverlay('Przetwarzanie wyboru...');
-    
+
     try {
       // Pobierz aktualną cenę
       const currentPrice = await this.apiService.getCurrentPrice();
       this.data.prices.startPrice = currentPrice;
-      
+
       // Wyślij wybór do API
       const result = await this.apiService.submitChoice(
         this.data.sessionId,
         this.data.currentRound.id,
         side
       );
-      
+
       // Zaktualizuj statystyki
       this.data.prices.endPrice = result.end_price;
       this.data.stats.remainingPairs = result.remaining_pairs;
       this.data.stats.sessionProfitFactor = result.session_profit_factor;
-      
+
+      // Handle result enum (API returns SUCCESS or FAILURE as string)
       if (result.result === 'SUCCESS') {
         this.data.stats.successes++;
-      } else {
+      } else if (result.result === 'FAILURE') {
         this.data.stats.failures++;
+      } else {
+        Logger.error('Nieznany wynik rundy', result.result);
       }
-      
+
       // Sprawdź, czy sesja jest zakończona
       const isSessionCompleted = (
-        result.session_status === 'COMPLETED' || 
+        result.session_status === 'COMPLETED' ||
         result.remaining_pairs === 0
       );
-      
+
       // Zaktualizuj UI
       UIController.updateStats(this.data.stats);
       UIController.updateButtons(isSessionCompleted);
-      
+
       // Pokaż wynik
       await this.showResult(result);
-      
+
       // Jeśli sesja jest zakończona, zaktualizuj stan
       if (isSessionCompleted) {
         this.state = GameStates.SESSION_COMPLETED;
@@ -1080,20 +1098,20 @@ class GameController {
       UIController.hideLoadingOverlay();
     }
   }
-  
+
   /**
    * Wyświetla wynik wyboru
    */
   async showResult(result) {
     this.state = GameStates.SHOWING_RESULT;
     Logger.state(GameStates.SHOWING_RESULT, result);
-    
+
     try {
       // Oblicz procentową zmianę ceny
       const startPrice = this.data.prices.startPrice;
       const endPrice = this.data.prices.endPrice;
       const profitFraction = (endPrice - startPrice) / startPrice;
-      
+
       // Wyświetl fazę wyniku z odpowiednio formatowanym komunikatem
       UIController.prepareResultPhase();
       UIController.displayResult(
@@ -1106,7 +1124,7 @@ class GameController {
       throw error;
     }
   }
-  
+
   /**
    * Sprawdza status sesji i tworzy nową lub proponuje wznowienie istniejącej
    */
@@ -1115,10 +1133,10 @@ class GameController {
       // Sprawdź status sesji (czy istnieje aktywna, oczekująca, czy trzeba stworzyć nową)
       UIController.updateLoadingMessage('Sprawdzanie statusu sesji...');
       const sessionData = await this.apiService.checkSessionStatus();
-      
+
       if (sessionData.session_exists) {
         Logger.info(`Wykryto sesję w statusie: ${sessionData.session_status}`);
-        
+
         if (sessionData.session_status === 'GENERATING') {
           // Sesja w trakcie generowania - pokazujemy dialog z informacją
           await this.handleGeneratingSession(sessionData);
@@ -1147,10 +1165,10 @@ class GameController {
             console.log(`Automatyczne aktywowanie sesji PENDING ${sessionData.session_id}...`);
             const activatedSession = await this.apiService.resumeSession(sessionData.session_id);
             console.log('Sesja aktywowana:', activatedSession);
-            
+
             this.data.sessionId = sessionData.session_id;
             await this.setupSessionData(activatedSession);
-            
+
             // Jawnie ładujemy pierwszą rundę dla aktywowanej sesji
             try {
               await this.loadNewRound();
@@ -1169,7 +1187,7 @@ class GameController {
           // Inne statusy - pokaż dialog wyboru
           const dialog = UIController.showSessionDialog(sessionData);
           UIController.hideLoadingOverlay();
-          
+
           // Dodaj obsługę przycisków
           if (sessionData.session_status === 'PENDING') {
             // Obsługa aktywacji oczekującej sesji
@@ -1179,16 +1197,16 @@ class GameController {
                 console.log(`Aktywowanie sesji ${sessionData.session_id}...`);
                 const token = localStorage.getItem('token');
                 console.log(`Token autoryzacji: ${token ? 'dostępny' : 'brak'}`);
-                
+
                 const activatedSession = await this.apiService.resumeSession(sessionData.session_id);
                 console.log('Sesja aktywowana:', activatedSession);
-                
+
                 this.data.sessionId = sessionData.session_id;
                 await this.setupSessionData(activatedSession);
-                
+
                 // Upewniamy się, że dialog jest usunięty przed załadowaniem nowej rundy
                 UIController.removeSessionDialog(dialog);
-                
+
                 // Jawnie ładujemy pierwszą rundę dla aktywowanej sesji
                 try {
                   await this.loadNewRound();
@@ -1204,7 +1222,7 @@ class GameController {
                 alert(`Nie udało się aktywować sesji: ${error.message}. Spróbuj ponownie.`);
               }
             });
-            
+
             // Obsługa tworzenia nowej sesji
             document.querySelector('#new-session-btn').addEventListener('click', async () => {
               UIController.showLoadingOverlay('Tworzenie nowej sesji...');
@@ -1238,7 +1256,7 @@ class GameController {
         // Brak sesji - tworzymy nową
         Logger.info('Brak istniejącej sesji, tworzenie nowej');
         UIController.updateLoadingMessage('Tworzenie nowej sesji... (może to potrwać do 60 sekund)');
-        
+
         try {
           const newSession = await this.apiService.createSession();
           this.data.sessionId = newSession.id;
@@ -1252,7 +1270,7 @@ class GameController {
     } catch (error) {
       Logger.error('Błąd podczas sprawdzania/tworzenia sesji', error);
       UIController.hideLoadingOverlay();
-      
+
       // Wyświetl przyjazny komunikat o błędzie
       const errorContainer = document.querySelector('#game-container');
       if (errorContainer) {
@@ -1264,21 +1282,21 @@ class GameController {
           <p class="error-details">${error.message}</p>
           <button id="retry-btn" class="button primary-button">Spróbuj ponownie</button>
         `;
-        
+
         // Wyczyść istniejącą zawartość i dodaj komunikat
         errorContainer.innerHTML = '';
         errorContainer.appendChild(errorMessage);
-        
+
         // Dodaj obsługę przycisku
         document.querySelector('#retry-btn').addEventListener('click', () => {
           window.location.reload();
         });
       }
-      
+
       throw error;
     }
   }
-  
+
   /**
    * Obsługa sesji w trakcie generowania
    */
@@ -1286,7 +1304,7 @@ class GameController {
     // Pokazujemy dialog z informacją o generowaniu
     const dialog = UIController.showSessionDialog(sessionData);
     UIController.hideLoadingOverlay();
-    
+
     // Co 5 sekund sprawdzamy status
     const checkStatus = async () => {
       try {
@@ -1306,10 +1324,10 @@ class GameController {
         setTimeout(checkStatus, 5000);
       }
     };
-    
+
     // Rozpocznij sprawdzanie statusu
     setTimeout(checkStatus, 5000);
-    
+
     // Obsługa przycisku ręcznego sprawdzenia statusu
     document.querySelector('#check-status-btn').addEventListener('click', async () => {
       UIController.removeSessionDialog(dialog);
@@ -1327,7 +1345,7 @@ class GameController {
 document.addEventListener('DOMContentLoaded', () => {
   // Utworzenie instancji kontrolera gry
   const gameController = new GameController();
-  
+
   // Wyświetlanie nazwy użytkownika (jeśli dostępne)
   const token = localStorage.getItem('token');
   if (token) {
@@ -1341,7 +1359,7 @@ document.addEventListener('DOMContentLoaded', () => {
       Logger.error('Błąd podczas dekodowania tokenu', error);
     }
   }
-  
+
   // Obsługa przycisku wylogowania
   const logoutButton = document.getElementById('logout-button');
   if (logoutButton) {

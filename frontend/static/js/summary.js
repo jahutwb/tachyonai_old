@@ -33,7 +33,7 @@ function getElement(id) {
 function showLoading(message) {
     const loadingMessage = getElement('loading-message');
     const loadingOverlay = getElement('loading-overlay');
-    
+
     if (loadingMessage) loadingMessage.textContent = message;
     if (loadingOverlay) loadingOverlay.style.display = 'flex';
 }
@@ -65,32 +65,32 @@ function fetchWithAuth(url, options = {}) {
 // Inicjalizacja strony podsumowania
 async function initSummary() {
     showLoadingOverlay('Ładowanie podsumowania sesji...');
-    
+
     // Pobierz ID sesji z URL
     const urlParams = new URLSearchParams(window.location.search);
     const sessionId = urlParams.get('session_id');
-    
+
     if (!sessionId) {
         alert('Nieprawidłowy identyfikator sesji.');
         window.location.href = '/';
         return;
     }
-    
+
     SummaryState.sessionId = sessionId;
-    
+
     try {
         // Pobierz dane sesji
         await loadSessionData();
-        
+
         // Pobierz dane rund
         await loadRoundsData();
-        
+
         // Zaktualizuj UI
         updateSummaryUI();
-        
+
         // Generuj wykres bogactwa
         generateWealthChart();
-        
+
         hideLoadingOverlay();
     } catch (error) {
         console.error('Błąd ładowania podsumowania:', error);
@@ -102,41 +102,41 @@ async function initSummary() {
 // Ładowanie danych sesji
 async function loadSessionData() {
     const response = await fetchWithAuth(`/api/sessions/${SummaryState.sessionId}/summary`);
-    
+
     if (!response.ok) {
         throw new Error('Nie można załadować danych sesji');
     }
-    
+
     SummaryState.sessionData = await response.json();
 }
 
 // Ładowanie danych rund
 async function loadRoundsData() {
     const response = await fetchWithAuth(`/api/sessions/${SummaryState.sessionId}/rounds`);
-    
+
     if (!response.ok) {
         throw new Error('Nie można załadować danych rund');
     }
-    
+
     SummaryState.rounds = await response.json();
 }
 
 // Aktualizacja UI podsumowania
 function updateSummaryUI() {
     const data = SummaryState.sessionData;
-    
+
     // Aktualizacja statystyk
     document.getElementById('session-successes').textContent = data.success_count;
     document.getElementById('session-failures').textContent = data.failure_count;
     document.getElementById('session-difference').textContent = data.success_count - data.failure_count;
-    
+
     const totalRounds = data.success_count + data.failure_count;
     const successRate = totalRounds > 0 ? Math.round((data.success_count / totalRounds) * 100) : 0;
     document.getElementById('session-success-rate').textContent = `${successRate}%`;
-    
+
     const profit = ((data.session_profit_factor - 1) * 100).toFixed(2);
     document.getElementById('session-profit').textContent = `${profit}%`;
-    
+
     // Aktualizacja rankingu bodźców pozytywnych
     updatePositiveRanking();
 }
@@ -144,27 +144,27 @@ function updateSummaryUI() {
 // Generowanie wykresu bogactwa
 function generateWealthChart() {
     const rounds = SummaryState.rounds;
-    
+
     if (!rounds || rounds.length === 0) {
         return;
     }
-    
+
     // Przygotuj dane dla wykresu
     const labels = rounds.map((_, index) => `Runda ${index + 1}`);
     const wealthData = [];
-    
+
     let cumulativeWealth = 1.0;
     for (const round of rounds) {
         cumulativeWealth *= (1 + round.profit_fraction);
         wealthData.push(cumulativeWealth);
     }
-    
+
     // Przekształć na procentowy zysk
     const percentWealthData = wealthData.map(value => ((value - 1) * 100).toFixed(2));
-    
+
     // Stwórz wykres
     const ctx = document.getElementById('wealth-chart').getContext('2d');
-    
+
     SummaryState.wealthChart = new Chart(ctx, {
         type: 'line',
         data: {
@@ -215,30 +215,30 @@ function generateWealthChart() {
 function updatePositiveRanking() {
     const rankingContainer = document.getElementById('positive-stimulus-ranking');
     rankingContainer.innerHTML = '';
-    
+
     const positivePool = SummaryState.sessionData.positive_stimuli || [];
-    
+
     if (positivePool.length === 0) {
         rankingContainer.innerHTML = '<p>Brak danych o bodźcach pozytywnych.</p>';
         return;
     }
-    
+
     // Sortuj według liczby sukcesów (malejąco)
     const sortedStimuli = [...positivePool].sort((a, b) => b.successes - a.successes);
-    
+
     // Wyświetl tylko te z conajmniej 1 sukcesem
     const successfulStimuli = sortedStimuli.filter(stimulus => stimulus.successes > 0);
-    
+
     if (successfulStimuli.length === 0) {
         rankingContainer.innerHTML = '<p>Brak bodźców z sukcesami.</p>';
         return;
     }
-    
+
     // Stwórz elementy rankingu
     successfulStimuli.forEach((stimulus, index) => {
         const stimulusElement = document.createElement('div');
         stimulusElement.className = 'stimulus-rank-item';
-        
+
         stimulusElement.innerHTML = `
             <div class="stimulus-rank-number">${index + 1}</div>
             <div class="stimulus-rank-image">
@@ -250,7 +250,7 @@ function updatePositiveRanking() {
                 <div class="stimulus-origin">Pochodzenie: ${translateOrigin(stimulus.origin)}</div>
             </div>
         `;
-        
+
         if (stimulus.origin === 'child' && stimulus.parent) {
             const parentLink = document.createElement('div');
             parentLink.className = 'stimulus-parent-link';
@@ -259,10 +259,10 @@ function updatePositiveRanking() {
                 // Tutaj można by dodać akcję pokazującą obrazek rodzica
                 alert(`Obrazek rodzica #${stimulus.parent}`);
             });
-            
+
             stimulusElement.querySelector('.stimulus-rank-details').appendChild(parentLink);
         }
-        
+
         rankingContainer.appendChild(stimulusElement);
     });
 }
@@ -271,7 +271,7 @@ function updatePositiveRanking() {
 function toggleRoundsDetails() {
     const detailsContainer = document.getElementById('rounds-details');
     const button = document.getElementById('show-details-button');
-    
+
     if (detailsContainer.style.display === 'none') {
         detailsContainer.style.display = 'block';
         button.textContent = 'Ukryj szczegóły rund';
@@ -286,25 +286,25 @@ function toggleRoundsDetails() {
 function populateRoundsDetails() {
     const tableBody = document.getElementById('rounds-table-body');
     tableBody.innerHTML = '';
-    
+
     const rounds = SummaryState.rounds;
-    
+
     if (!rounds || rounds.length === 0) {
         tableBody.innerHTML = '<tr><td colspan="7">Brak danych o rundach.</td></tr>';
         return;
     }
-    
+
     rounds.forEach((round, index) => {
         const row = document.createElement('tr');
-        
+
         // Formatowanie daty
         const date = new Date(round.created_at);
         const formattedDate = `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
-        
+
         // Formatowanie zmiany procentowej
         const profitPercent = (round.profit_fraction * 100).toFixed(2);
         const profitSign = round.profit_fraction >= 0 ? '+' : '';
-        
+
         row.innerHTML = `
             <td>${index + 1}</td>
             <td>${formattedDate}</td>
@@ -314,7 +314,7 @@ function populateRoundsDetails() {
             <td class="${round.profit_fraction >= 0 ? 'positive' : 'negative'}">${profitSign}${profitPercent}%</td>
             <td class="${round.result.toLowerCase()}">${round.result === 'SUCCESS' ? 'SUKCES' : 'PORAŻKA'}</td>
         `;
-        
+
         tableBody.appendChild(row);
     });
 }
@@ -322,16 +322,16 @@ function populateRoundsDetails() {
 // Tworzenie nowej sesji
 async function createNewSession() {
     showLoadingOverlay('Generowanie nowej sesji...');
-    
+
     try {
         const response = await fetchWithAuth('/api/sessions', {
             method: 'POST'
         });
-        
+
         if (!response.ok) {
             throw new Error('Nie można utworzyć nowej sesji');
         }
-        
+
         const session = await response.json();
         window.location.href = `/game?session_id=${session.id}`;
     } catch (error) {
@@ -359,7 +359,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         statsContainer.id = 'pool-stats-container';
         statsContainer.className = 'pool-stats-box';
         statsContainer.style.display = 'none'; // Początkowe ukrycie
-        
+
         // Znajdź przycisk nowej sesji i dodaj kontener po nim
         const newSessionButton = document.getElementById('new-session-button');
         if (newSessionButton && newSessionButton.parentNode) {
@@ -367,20 +367,20 @@ document.addEventListener('DOMContentLoaded', async function() {
             newSessionButton.disabled = true;
             newSessionButton.classList.add('loading');
             newSessionButton.innerHTML = '<div class="spinner"></div> Oczekiwanie na pulę...';
-            
+
             // Dodaj kontener statystyk pod przyciskiem
             newSessionButton.parentNode.insertAdjacentElement('afterend', statsContainer);
         }
-        
+
         console.log('Inicjalizacja strony podsumowania...');
-        
+
         // Inicjalizacja tokenów i pobierania danych
         initializeTokenCheck();
-        
+
         // Pobierz dane sesji z URL
         const urlParams = new URLSearchParams(window.location.search);
         const sessionId = urlParams.get('session_id');
-        
+
         if (sessionId) {
             // Ładowanie szczegółów sesji i inicjalizacja podsumowania
             console.log(`Pobieranie danych dla sesji ${sessionId}...`);
@@ -389,7 +389,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                 fetchRoundsData(sessionId),
                 fetchSessionImages(sessionId)
             ]);
-            
+
             // Rozpocznij sprawdzanie dostępności puli dla nowej sesji
             console.log('Rozpoczynam sprawdzanie dostępności nowej puli...');
             checkPoolReadiness(sessionId);
@@ -398,12 +398,12 @@ document.addEventListener('DOMContentLoaded', async function() {
             alert('Brak identyfikatora sesji. Przekierowanie do strony głównej...');
             window.location.href = '/';
         }
-        
+
         // Dodaj obsługę kliknięcia przycisku nowej sesji
         if (newSessionButton) {
             newSessionButton.addEventListener('click', startNewSession);
         }
-        
+
     } catch (error) {
         console.error('Błąd inicjalizacji strony:', error);
         alert('Wystąpił błąd podczas ładowania strony podsumowania.');
@@ -414,43 +414,43 @@ document.addEventListener('DOMContentLoaded', async function() {
 async function loadSessionSummary(sessionId) {
     try {
         showLoading('Ładowanie podsumowania sesji...');
-        
+
         // Pobieranie danych sesji
         const sessionResponse = await fetch(`/api/sessions/${sessionId}`, {
             headers: {
                 'Authorization': `Bearer ${localStorage.getItem('token')}`
             }
         });
-        
+
         if (!sessionResponse.ok) {
             throw new Error('Błąd podczas pobierania danych sesji');
         }
-        
+
         currentSession = await sessionResponse.json();
-        
+
         // Pobieranie rund sesji
         const roundsResponse = await fetch(`/api/sessions/${sessionId}/rounds`, {
             headers: {
                 'Authorization': `Bearer ${localStorage.getItem('token')}`
             }
         });
-        
+
         if (!roundsResponse.ok) {
             throw new Error('Błąd podczas pobierania danych rund');
         }
-        
+
         sessionRounds = await roundsResponse.json();
-        
+
         // Pobieranie podsumowania sesji
         const summaryResponse = await fetch(`/api/sessions/${sessionId}/summary`, {
             headers: {
                 'Authorization': `Bearer ${localStorage.getItem('token')}`
             }
         });
-        
+
         if (!summaryResponse.ok) {
             console.error('Błąd pobierania podsumowania sesji:', await summaryResponse.text());
-            
+
             // Kontynuuj bez podsumowania
             renderSessionStats({
                 success_count: currentSession.success_count || 0,
@@ -460,24 +460,24 @@ async function loadSessionSummary(sessionId) {
             });
             renderWealthChart(sessionRounds);
             renderRoundsDetails(sessionRounds);
-            
+
             hideLoading();
             return;
         }
-        
+
         const sessionSummary = await summaryResponse.json();
         console.log('Podsumowanie sesji:', sessionSummary);
-        
+
         // Sprawdź, czy sesja jest zakończona i rozpocznij generowanie nowej puli
         if (sessionSummary.status === "COMPLETED") {
             console.log("Sesja zakończona, sprawdzam/rozpoczynam generowanie nowej puli...");
             checkPoolReadiness(sessionSummary.id);
         }
-        
+
         // Renderowanie danych
         renderSessionStats(sessionSummary);
         renderWealthChart(sessionRounds);
-        
+
         // Renderowanie rankingów bodźców
         if (sessionSummary.pos_ranking && sessionSummary.pos_ranking.length > 0) {
             renderStimuliRanking(sessionSummary.pos_ranking, 'pos');
@@ -488,9 +488,9 @@ async function loadSessionSummary(sessionId) {
                 positiveRanking.innerHTML = '<p>Brak danych dla rankingu bodźców pozytywnych</p>';
             }
         }
-        
+
         renderRoundsDetails(sessionRounds);
-        
+
         hideLoading();
     } catch (error) {
         console.error('Błąd ładowania podsumowania sesji:', error);
@@ -507,19 +507,19 @@ function renderSessionStats(summary) {
     const sessionDifference = getElement('session-difference');
     const sessionSuccessRate = getElement('session-success-rate');
     const sessionProfit = getElement('session-profit');
-    
+
     // Sprawdzamy dostępność każdego elementu przed aktualizacją
     const successCount = summary.success_count || 0;
     const failureCount = summary.failure_count || 0;
-    
+
     if (sessionSuccesses) sessionSuccesses.textContent = successCount;
     if (sessionFailures) sessionFailures.textContent = failureCount;
     if (sessionDifference) sessionDifference.textContent = successCount - failureCount;
-    
+
     const totalRounds = successCount + failureCount;
     const successRate = totalRounds > 0 ? Math.round((successCount / totalRounds) * 100) : 0;
     if (sessionSuccessRate) sessionSuccessRate.textContent = `${successRate}%`;
-    
+
     const profit = ((summary.session_profit_factor - 1) * 100).toFixed(2);
     if (sessionProfit) sessionProfit.textContent = `${profit}%`;
 }
@@ -527,7 +527,7 @@ function renderSessionStats(summary) {
 // Funkcja renderująca wykres bogactwa
 function renderWealthChart(rounds) {
     const ctx = getElement('wealth-chart');
-    
+
     if (!ctx) {
         console.error('Nie znaleziono elementu dla wykresu bogactwa');
         return;
@@ -538,19 +538,19 @@ function renderWealthChart(rounds) {
     const labels = ['Runda 0', ...rounds.map((_, index) => `Runda ${index + 1}`)];
     const wealthData = [0]; // Zaczynamy od 0% (początkowy stan)
     let cumulativeWealth = 1.0; // Zaczynamy od 1.0 (100%)
-    
+
     for (const round of rounds) {
         if (round.profit_fraction !== undefined && round.profit_fraction !== null) {
             cumulativeWealth *= (1 + round.profit_fraction);
         }
         wealthData.push((cumulativeWealth - 1) * 100); // Konwersja na procenty
     }
-    
+
     // Tworzenie wykresu za pomocą Chart.js
     if (sessionWealthChart) {
         sessionWealthChart.destroy();
     }
-    
+
     try {
         sessionWealthChart = new Chart(ctx.getContext('2d'), {
             type: 'line',
@@ -686,25 +686,25 @@ function renderStimuliRanking(ranking, type) {
 // Funkcja renderująca szczegóły rund
 function renderRoundsDetails(rounds) {
     const roundsTableBody = getElement('rounds-table-body');
-    
+
     if (!roundsTableBody) {
         console.error('Nie znaleziono tabeli z detalami rund');
         return;
     }
-    
+
     if (!rounds || rounds.length === 0) {
         roundsTableBody.innerHTML = '<tr><td colspan="7">Brak danych o rundach</td></tr>';
         return;
     }
-    
+
     // Przygotowanie HTML
     let html = '';
-    
+
     rounds.forEach((round, index) => {
         const dateTime = new Date(round.created_at).toLocaleString();
         const priceChange = round.profit_fraction ? (round.profit_fraction * 100).toFixed(2) : '0.00';
         const profit = round.profit_fraction ? (round.profit_fraction * 100).toFixed(2) : '0.00';
-        
+
         html += `
             <tr>
                 <td>${index + 1}</td>
@@ -713,11 +713,11 @@ function renderRoundsDetails(rounds) {
                 <td>${round.neg_image_id || 'N/A'}</td>
                 <td>${round.user_choice_side === 'LEFT' ? 'Lewa' : 'Prawa'}</td>
                 <td>${priceChange > 0 ? '+' : ''}${priceChange}%</td>
-                <td class="${round.result === 'SUCCESS' ? 'success' : 'failure'}">${round.result === 'SUCCESS' ? 'SUKCES' : 'PORAŻKA'}</td>
+                <td class="${round.result === 'SUCCESS' ? 'success' : 'failure'}">${round.result === 'SUCCESS' ? 'SUKCES' : (round.result === 'FAILURE' ? 'PORAŻKA' : 'NIEZNANY')}</td>
             </tr>
         `;
     });
-    
+
     roundsTableBody.innerHTML = html;
 }
 
@@ -725,12 +725,12 @@ function renderRoundsDetails(rounds) {
 function toggleRoundsDetails() {
     const detailsContainer = document.getElementById('rounds-details');
     const button = document.getElementById('show-details-button');
-    
+
     if (!detailsContainer || !button) {
         console.error('Nie znaleziono elementów do przełączania widoku szczegółów');
         return;
     }
-    
+
     if (detailsContainer.style.display === 'none' || !detailsContainer.style.display) {
         detailsContainer.style.display = 'block';
         button.textContent = 'Ukryj szczegółowy przebieg rund';
@@ -746,12 +746,12 @@ async function startNewSession() {
     try {
         const newSessionButton = document.getElementById('new-session-button');
         if (!newSessionButton) return;
-        
+
         // Pokaż spinner tylko na przycisku
         newSessionButton.disabled = true;
         newSessionButton.classList.add('loading');
         newSessionButton.innerHTML = '<div class="spinner"></div> Rozpoczynanie sesji...';
-        
+
         // Sprawdzenie tokenu
         const token = localStorage.getItem('token');
         if (!token) {
@@ -759,7 +759,7 @@ async function startNewSession() {
             window.location.href = '/';
             return;
         }
-        
+
         // Wywołanie endpointu sessions, który powinien znaleźć sesję PENDING i ją aktywować
         // lub utworzyć nową sesję, jeśli nie ma PENDING
         const response = await fetch('/api/sessions', {
@@ -770,15 +770,15 @@ async function startNewSession() {
             },
             body: JSON.stringify({})  // Pusty obiekt - backend znajdzie istniejącą sesję PENDING
         });
-        
+
         if (!response.ok) {
             const errorData = await response.json();
             throw new Error(`Błąd rozpoczęcia sesji: ${errorData.detail || 'Nieznany błąd'}`);
         }
-        
+
         const data = await response.json();
         console.log('Odpowiedź z serwera:', data);
-        
+
         // Sprawdź czy mamy ID sesji w odpowiedzi
         if (data.session_id) {
             // Przekierowanie do strony gry z sesją
@@ -788,7 +788,7 @@ async function startNewSession() {
         }
     } catch (error) {
         console.error('Błąd podczas rozpoczynania sesji:', error);
-        
+
         // Przywróć oryginalny wygląd przycisku
         const newSessionButton = document.getElementById('new-session-button');
         if (newSessionButton) {
@@ -796,7 +796,7 @@ async function startNewSession() {
             newSessionButton.classList.remove('loading');
             newSessionButton.innerHTML = 'Nowa sesja';
         }
-        
+
         alert('Wystąpił błąd podczas rozpoczynania sesji. Spróbuj ponownie.');
     }
 }
@@ -853,20 +853,20 @@ async function triggerPoolGeneration(sessionId) {
     try {
         console.log('Rozpoczynam generowanie nowej puli...');
         isCheckingPool = true;  // Rozpoczynamy sprawdzanie
-        
+
         const response = await fetchWithAuth(`/api/sessions/${sessionId}/trigger-pool-generation`, {
             method: 'POST'
         });
-        
+
         if (!response.ok) {
             throw new Error(`Błąd wywołania trigger_pool_generation: ${response.status}`);
         }
-        
+
         console.log('Pomyślnie wywołano trigger_pool_generation');
-        
+
         // Sprawdź gotowość puli asynchronicznie
         await checkPoolReadiness(sessionId);
-        
+
         // Sprawdzanie powinno być zatrzymane po znalezieniu gotowej puli lub po przekroczeniu limitu czasu
     } catch (error) {
         console.error('Błąd podczas wywoływania trigger_pool_generation:', error);
@@ -884,22 +884,22 @@ async function displayPoolStatistics(sessionId) {
 
         if (data && data.pool_stats) {
             console.log('Wyświetlam statystyki nowej puli');
-            
+
             // Wyświetl statystyki w UI
             const statsContainer = document.createElement('div');
             statsContainer.id = 'pool-stats-container';
             statsContainer.className = 'pool-stats-box';
-            
+
             // Usuń poprzedni container statystyk, jeśli istnieje
             const existingContainer = document.getElementById('pool-stats-container');
             if (existingContainer) {
                 existingContainer.remove();
             }
-            
+
             // Używamy danych z pool_stats
             const posStats = data.pool_stats.pos_pool;
             const negStats = data.pool_stats.neg_pool;
-            
+
             const statsHTML = `
                 <div class="pool-stats-info">
                     <h3>Statystyki Nowej Puli</h3>
@@ -933,7 +933,7 @@ async function displayPoolStatistics(sessionId) {
                     </tr>
                 </table>
             `;
-            
+
             statsContainer.innerHTML = statsHTML;
             document.getElementById('summary-content').appendChild(statsContainer);
 
@@ -956,7 +956,7 @@ async function fetchSessionDetails(sessionId) {
         console.log(`Pobieranie szczegółów sesji ${sessionId}...`);
         // Pobierz szczegóły sesji z API
         await loadSessionSummary(sessionId);
-        
+
         // Inicjalizacja przycisków
         const detailsToggleButton = getElement('show-details-button');
         if (detailsToggleButton) {

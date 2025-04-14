@@ -55,13 +55,13 @@ def test_db():
     """Fixture tworzący testową bazę danych."""
     # Tworzenie tabel
     Base.metadata.create_all(bind=engine)
-    
+
     # Inicjalizacja testowych obrazów, jeśli potrzebne
     init_test_images(TestingSessionLocal())
-    
+
     # Zwrócenie sesji bazy danych
     db = TestingSessionLocal()
-    
+
     try:
         yield db
     finally:
@@ -70,7 +70,7 @@ def test_db():
         db.execute(text("DELETE FROM sessions"))
         db.execute(text("DELETE FROM users"))
         db.execute(text("DELETE FROM images"))
-        
+
         db.commit()
         db.close()
 
@@ -80,7 +80,7 @@ def init_test_images(db):
     images_count = db.query(Image).count()
     if images_count > 0:
         return
-    
+
     # Dodaj testowe obrazy
     for i in range(1, 11):  # 10 obrazów każdego typu
         # Pozytywne obrazy
@@ -90,7 +90,7 @@ def init_test_images(db):
             embedding=[0.1 * i for _ in range(10)],  # Symulacja wektora embeddingu
         )
         db.add(pos_image)
-        
+
         # Negatywne obrazy
         neg_image = Image(
             path=f"test_images/negative_{i}.jpg",
@@ -98,7 +98,7 @@ def init_test_images(db):
             embedding=[0.1 * i for _ in range(10)],  # Symulacja wektora embeddingu
         )
         db.add(neg_image)
-    
+
     db.commit()
 
 def create_test_user(db, username=None, password="test_password"):
@@ -106,23 +106,23 @@ def create_test_user(db, username=None, password="test_password"):
     # Generowanie unikalnej nazwy użytkownika
     if username is None:
         username = f"test_user_{str(uuid.uuid4())[:8]}"
-    
+
     # Usunięcie istniejącego użytkownika o tej samej nazwie (jeśli istnieje)
     existing_user = db.query(User).filter(User.username == username).first()
     if existing_user:
         db.delete(existing_user)
         db.commit()
-    
+
     # Tworzenie hashu hasła
     hashed_password = get_password_hash(password)
-    
+
     # Tworzenie nowego użytkownika
     user = User(
         username=username,
         password_hash=hashed_password,
         role=UserRoleEnum.USER
     )
-    
+
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -132,7 +132,7 @@ def get_test_user_token(user):
     """Generuje token JWT dla testowego użytkownika"""
     access_token_expires = timedelta(minutes=30)
     access_token = create_access_token(
-        data={"sub": user.username}, 
+        data={"sub": user.username},
         expires_delta=access_token_expires
     )
     return access_token
@@ -158,3 +158,53 @@ def test_user_token(test_user):
 def authorized_client(test_user_token):
     """Zwraca klienta testowego z ustawionym tokenem uwierzytelniającym."""
     return get_authorized_client(test_user_token)
+
+@pytest.fixture
+def test_session(test_db, test_user):
+    """Tworzy testową sesję w bazie danych."""
+    from backend.models import Session as SessionModel
+    import json
+
+    # Tworzenie struktury dla pul obrazów
+    pos_pool = [{"id": 1, "successes": 0, "failures": 0, "origin": "random"}]
+    neg_pool = [{"id": 11, "successes": 0, "failures": 0, "origin": "random"}]
+
+    # Tworzenie sesji
+    session = SessionModel(
+        user_id=test_user.id,
+        status="ACTIVE",
+        pos_pool_json=pos_pool,
+        neg_pool_json=neg_pool,
+        session_profit_factor=1.0,
+        remaining_pairs=6,
+    )
+    test_db.add(session)
+    test_db.commit()
+    test_db.refresh(session)
+    return session
+
+@pytest.fixture
+def test_round(test_db, test_session):
+    """Tworzy testową rundę w bazie danych."""
+    from backend.models import Round
+
+    # Tworzenie rundy
+    round = Round(
+        session_id=test_session.id,
+        round_number=1,
+        pos_image_id=1,
+        neg_image_id=11,
+        user_choice_side=None,
+        user_action=None,
+        left_action="BUY",
+        right_action="SELL",
+        start_price=50000.0,
+        end_price=None,
+        profit_fraction=None,
+        result=None,
+        response_time=None
+    )
+    test_db.add(round)
+    test_db.commit()
+    test_db.refresh(round)
+    return round

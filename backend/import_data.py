@@ -25,13 +25,13 @@ POS_DIR = DATA_DIR / "pos"
 NEG_DIR = DATA_DIR / "neg"
 
 # Ścieżki do plików metadanych z Open Images - aktualizacja ścieżek
-OPEN_IMAGES_CLASSES_FILE = NEG_DIR / "open-images-v7" / "validation" / "metadata" / "classes.csv" 
+OPEN_IMAGES_CLASSES_FILE = NEG_DIR / "open-images-v7" / "validation" / "metadata" / "classes.csv"
 OPEN_IMAGES_IMAGE_IDS_FILE = NEG_DIR / "open-images-v7" / "validation" / "metadata" / "image_ids.csv"
 OPEN_IMAGES_DETECTIONS_FILE = NEG_DIR / "open-images-v7" / "validation" / "labels" / "detections.csv"
 OPEN_IMAGES_CLASSIFICATIONS_FILE = NEG_DIR / "open-images-v7" / "validation" / "labels" / "classifications.csv"
 
 # Dodatkowe ścieżki dla zbioru test
-OPEN_IMAGES_TEST_CLASSES_FILE = NEG_DIR / "open-images-v7" / "test" / "metadata" / "classes.csv" 
+OPEN_IMAGES_TEST_CLASSES_FILE = NEG_DIR / "open-images-v7" / "test" / "metadata" / "classes.csv"
 OPEN_IMAGES_TEST_IMAGE_IDS_FILE = NEG_DIR / "open-images-v7" / "test" / "metadata" / "image_ids.csv"
 OPEN_IMAGES_TEST_DETECTIONS_FILE = NEG_DIR / "open-images-v7" / "test" / "labels" / "detections.csv"
 OPEN_IMAGES_TEST_CLASSIFICATIONS_FILE = NEG_DIR / "open-images-v7" / "test" / "labels" / "classifications.csv"
@@ -42,7 +42,7 @@ def load_metadata_from_freeones(gallery_path: Path) -> Dict[str, Any]:
     metadata_file = gallery_path / "metadata.json"
     if not metadata_file.exists():
         return {}
-    
+
     try:
         with open(metadata_file, "r", encoding="utf-8") as f:
             metadata = json.load(f)
@@ -58,24 +58,24 @@ def load_metadata_from_freeones(gallery_path: Path) -> Dict[str, Any]:
 def process_pos_images(db: Session) -> int:
     """Przetwarza obrazy pozytywne i zapisuje je do bazy danych."""
     processed_count = 0
-    
+
     # Przetwarzanie obrazów z freeones
     freeones_dir = POS_DIR / "freeones"
     if freeones_dir.exists():
         for gallery_dir in freeones_dir.iterdir():
             if gallery_dir.is_dir():
                 metadata = load_metadata_from_freeones(gallery_dir)
-                
+
                 for img_file in gallery_dir.glob("*.jpg"):
                     # Sprawdź, czy obraz już istnieje w bazie
                     existing_image = db.query(ImageModel).filter(
                         ImageModel.path == str(img_file)
                     ).first()
-                    
+
                     if existing_image:
                         logger.info(f"Obraz {img_file} już istnieje w bazie, pomijam.")
                         continue
-                    
+
                     try:
                         # Stwórz nowy rekord obrazu
                         image = ImageModel(
@@ -86,15 +86,15 @@ def process_pos_images(db: Session) -> int:
                         )
                         db.add(image)
                         processed_count += 1
-                        
+
                         # Co 10 obrazów commituj do bazy
                         if processed_count % 10 == 0:
                             db.commit()
                             logger.info(f"Zapisano {processed_count} obrazów pozytywnych.")
-                    
+
                     except Exception as e:
                         logger.error(f"Błąd podczas przetwarzania obrazu {img_file}: {str(e)}")
-    
+
     # Przetwarzanie obrazów z rule34
     rule34_dir = POS_DIR / "rule34"
     if rule34_dir.exists():
@@ -103,11 +103,11 @@ def process_pos_images(db: Session) -> int:
             existing_image = db.query(ImageModel).filter(
                 ImageModel.path == str(img_file)
             ).first()
-            
+
             if existing_image:
                 logger.info(f"Obraz {img_file} już istnieje w bazie, pomijam.")
                 continue
-            
+
             try:
                 # Stwórz nowy rekord obrazu
                 image = ImageModel(
@@ -118,19 +118,19 @@ def process_pos_images(db: Session) -> int:
                 )
                 db.add(image)
                 processed_count += 1
-                
+
                 # Co 10 obrazów commituj do bazy
                 if processed_count % 10 == 0:
                     db.commit()
                     logger.info(f"Zapisano {processed_count} obrazów pozytywnych.")
-            
+
             except Exception as e:
                 logger.error(f"Błąd podczas przetwarzania obrazu {img_file}: {str(e)}")
-    
+
     # Końcowy commit
     db.commit()
     logger.info(f"Zakończono przetwarzanie obrazów pozytywnych. Zapisano {processed_count} obrazów.")
-    
+
     return processed_count
 
 
@@ -147,7 +147,7 @@ def load_open_images_classes(classes_file=OPEN_IMAGES_CLASSES_FILE) -> Dict[str,
                     class_map[class_id] = class_name
     except Exception as e:
         logger.error(f"Błąd podczas ładowania klas Open Images z {classes_file}: {str(e)}")
-    
+
     return class_map
 
 
@@ -156,23 +156,23 @@ def check_image_contains_person(image_id: str, detections_map: Dict[str, List[st
     # Jeśli brak detekcji dla tego obrazu, załóżmy że nie zawiera osoby
     if image_id not in detections_map:
         return False
-    
+
     # Klasy związane z osobami
     person_related_classes = [
         "Person", "Man", "Woman", "Boy", "Girl", "Human body", "Human face", "Human head"
     ]
     # Usunięto mniej istotne części ciała z listy, by zmniejszyć restrykcyjność
-    
+
     # Normalizacja nazw klas do małych liter dla łatwiejszego porównania
     person_related_classes_lower = {c.lower() for c in person_related_classes}
-    
+
     # Sprawdź, czy któraś z wykrytych klas wskazuje na obecność człowieka
     for class_id in detections_map[image_id]:
         if class_id in class_map:
             class_name = class_map[class_id]
             if class_name.lower() in person_related_classes_lower:
                 return True
-    
+
     return False
 
 
@@ -191,7 +191,7 @@ def load_open_images_detections(detections_file=OPEN_IMAGES_DETECTIONS_FILE) -> 
                     detections_map[image_id].append(class_id)
     except Exception as e:
         logger.error(f"Błąd podczas ładowania detekcji Open Images z {detections_file}: {str(e)}")
-    
+
     return detections_map
 
 
@@ -211,31 +211,31 @@ def load_open_images_classifications(classifications_file=OPEN_IMAGES_CLASSIFICA
                         classifications_map[image_id].append(class_id)
     except Exception as e:
         logger.error(f"Błąd podczas ładowania klasyfikacji Open Images z {classifications_file}: {str(e)}")
-    
+
     return classifications_map
 
 
 def get_image_metadata(
-    image_id: str, 
-    class_map: Dict[str, str], 
-    detections_map: Dict[str, List[str]], 
+    image_id: str,
+    class_map: Dict[str, str],
+    detections_map: Dict[str, List[str]],
     classifications_map: Dict[str, List[str]]
 ) -> Dict[str, Any]:
     """Tworzy metadane dla obrazu na podstawie danych Open Images."""
     metadata = {"Categories": [], "Tags": []}
-    
+
     # Dodawanie kategorii z detekcji
     if image_id in detections_map:
         for class_id in detections_map[image_id]:
             if class_id in class_map:
                 metadata["Categories"].append(class_map[class_id])
-    
+
     # Dodawanie tagów z klasyfikacji
     if image_id in classifications_map:
         for class_id in classifications_map[image_id]:
             if class_id in class_map:
                 metadata["Tags"].append(class_map[class_id])
-    
+
     return metadata
 
 
@@ -243,27 +243,27 @@ def map_filename_to_image_id(filename: str, image_ids_map: Dict[str, str]) -> Op
     """Mapuje nazwę pliku na ID obrazu z Open Images."""
     # Usunięcie rozszerzenia
     base_name = os.path.splitext(os.path.basename(filename))[0]
-    
+
     # Sprawdzenie, czy nazwa pliku jest bezpośrednio w mapie
     if base_name in image_ids_map:
         return image_ids_map[base_name]
-    
+
     # Nazwa pliku może zawierać samo ID obrazu
     if base_name in image_ids_map.values():
         return base_name
-    
+
     # Sprawdź, czy ID zawiera się w nazwie pliku
     for image_id in image_ids_map.values():
         if image_id in base_name:
             return image_id
-    
+
     # Ostatnia próba - sprawdź podobieństwo nazw
     for file_name, image_id in image_ids_map.items():
         if len(base_name) >= 3 and len(file_name) >= 3:
-            # Sprawdź czy pierwsze kilka znaków się zgadza
-            if base_name[:3] == file_name[:3]:
+            # Sprawdź czy nazwa pliku zawiera się w nazwie bazowej lub odwrotnie
+            if file_name in base_name or base_name in file_name:
                 return image_id
-    
+
     logger.warning(f"Nie znaleziono ID dla obrazu: {filename}")
     return None
 
@@ -283,14 +283,14 @@ def load_image_ids_map(image_ids_file=OPEN_IMAGES_IMAGE_IDS_FILE) -> Dict[str, s
                     image_ids_map[base_name] = image_id
     except Exception as e:
         logger.error(f"Błąd podczas ładowania mapowania ID obrazów Open Images z {image_ids_file}: {str(e)}")
-    
+
     return image_ids_map
 
 
 def process_neg_images(db: Session) -> int:
     """Przetwarza obrazy negatywne (bez ludzi) i zapisuje je do bazy danych."""
     processed_count = 0
-    
+
     # Ładowanie danych pomocniczych dla zbioru walidacyjnego
     logger.info("Ładowanie danych pomocniczych dla zbioru walidacyjnego...")
     validation_class_map = load_open_images_classes(OPEN_IMAGES_CLASSES_FILE)
@@ -304,49 +304,49 @@ def process_neg_images(db: Session) -> int:
     test_detections_map = load_open_images_detections(OPEN_IMAGES_TEST_DETECTIONS_FILE)
     test_classifications_map = load_open_images_classifications(OPEN_IMAGES_TEST_CLASSIFICATIONS_FILE)
     test_image_ids_map = load_image_ids_map(OPEN_IMAGES_TEST_IMAGE_IDS_FILE)
-    
+
     # Połączone mapy z obu zbiorów dla wygody
     class_map = {**validation_class_map, **test_class_map}
     detections_map = {**validation_detections_map, **test_detections_map}
     classifications_map = {**validation_classifications_map, **test_classifications_map}
     image_ids_map = {**validation_image_ids_map, **test_image_ids_map}
-    
+
     # Debugowanie - sprawdź zawartość map
     logger.info(f"Załadowano {len(class_map)} klas, {len(detections_map)} detekcji, {len(image_ids_map)} mapowań ID")
-    
+
     # Przetwarzanie obrazów z katalogu test/data
     logger.info("Przetwarzanie obrazów z katalogu test/data...")
     test_data_dir = NEG_DIR / "open-images-v7" / "test" / "data"
     processed_test_files = 0
-    
+
     if test_data_dir.exists():
         # Limit dla zbioru testowego (aby nie przetwarzać wszystkich ~125K obrazów)
         max_test_files = 3000  # Zwiększono limit obrazów do przetworzenia
-        
+
         for img_file in test_data_dir.glob("*.jpg"):
             processed_test_files += 1
             if processed_test_files > max_test_files:
                 logger.info(f"Osiągnięto limit {max_test_files} obrazów dla zbioru testowego.")
                 break
-                
+
             # Sprawdź, czy obraz już istnieje w bazie
             existing_image = db.query(ImageModel).filter(
                 ImageModel.path == str(img_file)
             ).first()
-            
+
             if existing_image:
                 logger.info(f"Obraz {img_file} już istnieje w bazie, pomijam.")
                 continue
-            
+
             # Mapuj nazwę pliku na ID obrazu
             image_id = map_filename_to_image_id(str(img_file), image_ids_map)
-            
+
             # Jeśli nie znaleziono ID, przypisujemy obrazowi pustą metadaną
             # Jeśli znaleziono ID i obraz zawiera osobę, tylko wtedy pomijamy
             if image_id and check_image_contains_person(image_id, detections_map, class_map):
                 logger.info(f"Pomijam obraz {img_file}: zawiera osobę.")
                 continue
-            
+
             try:
                 # Metadane - puste jeśli brak ID
                 metadata = {}
@@ -354,7 +354,7 @@ def process_neg_images(db: Session) -> int:
                     metadata = get_image_metadata(
                         image_id, class_map, detections_map, classifications_map
                     )
-                
+
                 # Stwórz nowy rekord obrazu
                 image = ImageModel(
                     path=str(img_file),
@@ -364,48 +364,48 @@ def process_neg_images(db: Session) -> int:
                 )
                 db.add(image)
                 processed_count += 1
-                
+
                 # Co 10 obrazów commituj do bazy
                 if processed_count % 10 == 0:
                     db.commit()
                     logger.info(f"Zapisano {processed_count} obrazów negatywnych.")
-            
+
             except Exception as e:
                 logger.error(f"Błąd podczas przetwarzania obrazu {img_file}: {str(e)}")
-    
+
     # Przetwarzanie obrazów z katalogu validation/data
     logger.info(f"Przetwarzanie obrazów z katalogu validation/data... (już przetworzono {processed_count})")
     validation_data_dir = NEG_DIR / "open-images-v7" / "validation" / "data"
     processed_validation_files = 0
-    
+
     if validation_data_dir.exists():
         # Limit dla zbioru walidacyjnego
         max_validation_files = 3000  # Zwiększono limit obrazów do przetworzenia
-        
+
         for img_file in validation_data_dir.glob("*.jpg"):
             processed_validation_files += 1
             if processed_validation_files > max_validation_files:
                 logger.info(f"Osiągnięto limit {max_validation_files} obrazów dla zbioru walidacyjnego.")
                 break
-                
+
             # Sprawdź, czy obraz już istnieje w bazie
             existing_image = db.query(ImageModel).filter(
                 ImageModel.path == str(img_file)
             ).first()
-            
+
             if existing_image:
                 logger.info(f"Obraz {img_file} już istnieje w bazie, pomijam.")
                 continue
-            
+
             # Mapuj nazwę pliku na ID obrazu
             image_id = map_filename_to_image_id(str(img_file), image_ids_map)
-            
+
             # Jeśli nie znaleziono ID, przypisujemy obrazowi pustą metadaną
             # Jeśli znaleziono ID i obraz zawiera osobę, tylko wtedy pomijamy
             if image_id and check_image_contains_person(image_id, detections_map, class_map):
                 logger.info(f"Pomijam obraz {img_file}: zawiera osobę.")
                 continue
-            
+
             try:
                 # Metadane - puste jeśli brak ID
                 metadata = {}
@@ -413,7 +413,7 @@ def process_neg_images(db: Session) -> int:
                     metadata = get_image_metadata(
                         image_id, class_map, detections_map, classifications_map
                     )
-                
+
                 # Stwórz nowy rekord obrazu
                 image = ImageModel(
                     path=str(img_file),
@@ -423,20 +423,20 @@ def process_neg_images(db: Session) -> int:
                 )
                 db.add(image)
                 processed_count += 1
-                
+
                 # Co 10 obrazów commituj do bazy
                 if processed_count % 10 == 0:
                     db.commit()
                     logger.info(f"Zapisano {processed_count} obrazów negatywnych.")
-            
+
             except Exception as e:
                 logger.error(f"Błąd podczas przetwarzania obrazu {img_file}: {str(e)}")
-    
+
     # Końcowy commit
     db.commit()
     logger.info(f"Zakończono przetwarzanie obrazów negatywnych. Zapisano {processed_count} obrazów.")
     logger.info(f"Przetworzono plików: {processed_test_files} testowych, {processed_validation_files} walidacyjnych.")
-    
+
     return processed_count
 
 
@@ -446,18 +446,18 @@ def main():
     if not DATA_DIR.exists():
         logger.error(f"Katalog danych {DATA_DIR} nie istnieje.")
         return
-    
+
     # Utworzenie sesji bazy danych
     db = SessionLocal()
     try:
         # Przetwarzanie obrazów pozytywnych
         pos_count = process_pos_images(db)
         logger.info(f"Zaimportowano {pos_count} obrazów pozytywnych.")
-        
+
         # Przetwarzanie obrazów negatywnych
         neg_count = process_neg_images(db)
         logger.info(f"Zaimportowano {neg_count} obrazów negatywnych.")
-        
+
         logger.info(f"Import zakończony. Łącznie zaimportowano {pos_count + neg_count} obrazów.")
     except Exception as e:
         logger.error(f"Błąd podczas importu danych: {str(e)}")
@@ -466,4 +466,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+    main()
