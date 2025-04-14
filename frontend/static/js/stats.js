@@ -219,6 +219,7 @@ async function openSessionDetails(sessionId) {
         // Wypełnij tabelę rund
         const tableBody = document.getElementById('modal-rounds-details');
         if (roundsData && roundsData.length > 0) {
+            console.log('Round data:', roundsData);
             roundsData.forEach((round, index) => {
                 const row = document.createElement('tr');
 
@@ -230,10 +231,21 @@ async function openSessionDetails(sessionId) {
                 const profitPercent = (round.profit_fraction * 100).toFixed(2);
                 const profitSign = round.profit_fraction >= 0 ? '+' : '';
 
+                // Debug user_choice_side value
+                console.log(`Round ${index + 1} choice:`, round.user_choice_side, typeof round.user_choice_side);
+
+                // Determine the choice text based on user_choice_side
+                let choiceText = 'Nieznany';
+                if (round.user_choice_side) {
+                    // Convert to uppercase string and compare
+                    const sideUpper = String(round.user_choice_side).toUpperCase();
+                    choiceText = sideUpper === 'LEFT' ? 'Lewa' : 'Prawa';
+                }
+
                 row.innerHTML = `
                     <td>${index + 1}</td>
                     <td>${formattedDate}</td>
-                    <td>${round.user_choice_side === 'LEFT' ? 'Lewa' : 'Prawa'}</td>
+                    <td>${choiceText}</td>
                     <td class="${round.profit_fraction >= 0 ? 'positive' : 'negative'}">${profitSign}${profitPercent}%</td>
                     <td class="${round.result.toLowerCase()}">${round.result === 'SUCCESS' ? 'SUKCES' : (round.result === 'FAILURE' ? 'PORAŻKA' : 'NIEZNANY')}</td>
                 `;

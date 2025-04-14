@@ -294,6 +294,8 @@ function populateRoundsDetails() {
         return;
     }
 
+    console.log('Rounds data in populateRoundsDetails:', rounds);
+
     rounds.forEach((round, index) => {
         const row = document.createElement('tr');
 
@@ -305,12 +307,23 @@ function populateRoundsDetails() {
         const profitPercent = (round.profit_fraction * 100).toFixed(2);
         const profitSign = round.profit_fraction >= 0 ? '+' : '';
 
+        // Debug user_choice_side value
+        console.log(`Round ${index + 1} choice:`, round.user_choice_side, typeof round.user_choice_side);
+
+        // Determine the choice text based on user_choice_side
+        let choiceText = 'Nieznany';
+        if (round.user_choice_side) {
+            // Convert to uppercase string and compare
+            const sideUpper = String(round.user_choice_side).toUpperCase();
+            choiceText = sideUpper === 'LEFT' ? 'Lewa' : 'Prawa';
+        }
+
         row.innerHTML = `
             <td>${index + 1}</td>
             <td>${formattedDate}</td>
             <td>${round.pos_image_id}</td>
             <td>${round.neg_image_id}</td>
-            <td>${round.user_choice_side === 'LEFT' ? 'Lewa' : 'Prawa'}</td>
+            <td>${choiceText}</td>
             <td class="${round.profit_fraction >= 0 ? 'positive' : 'negative'}">${profitSign}${profitPercent}%</td>
             <td class="${round.result.toLowerCase()}">${round.result === 'SUCCESS' ? 'SUKCES' : 'PORAŻKA'}</td>
         `;
@@ -705,13 +718,24 @@ function renderRoundsDetails(rounds) {
         const priceChange = round.profit_fraction ? (round.profit_fraction * 100).toFixed(2) : '0.00';
         const profit = round.profit_fraction ? (round.profit_fraction * 100).toFixed(2) : '0.00';
 
+        // Debug user_choice_side value
+        console.log(`Round ${index + 1} choice in renderRoundsDetails:`, round.user_choice_side, typeof round.user_choice_side);
+
+        // Determine the choice text based on user_choice_side
+        let choiceText = 'Nieznany';
+        if (round.user_choice_side) {
+            // Convert to uppercase string and compare
+            const sideUpper = String(round.user_choice_side).toUpperCase();
+            choiceText = sideUpper === 'LEFT' ? 'Lewa' : 'Prawa';
+        }
+
         html += `
             <tr>
                 <td>${index + 1}</td>
                 <td>${dateTime}</td>
                 <td>${round.pos_image_id || 'N/A'}</td>
                 <td>${round.neg_image_id || 'N/A'}</td>
-                <td>${round.user_choice_side === 'LEFT' ? 'Lewa' : 'Prawa'}</td>
+                <td>${choiceText}</td>
                 <td>${priceChange > 0 ? '+' : ''}${priceChange}%</td>
                 <td class="${round.result === 'SUCCESS' ? 'success' : 'failure'}">${round.result === 'SUCCESS' ? 'SUKCES' : (round.result === 'FAILURE' ? 'PORAŻKA' : 'NIEZNANY')}</td>
             </tr>
