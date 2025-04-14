@@ -340,7 +340,7 @@ a:hover {
     left: 0;
     width: 100%;
     background-color: rgba(26, 26, 26, 0.8);
-    padding: var(--spacing-md);
+    padding: 4px 12px; /* 🔽 zmniejszone z var(--spacing-md) */
     display: flex;
     justify-content: space-around;
     align-items: center;
@@ -354,14 +354,16 @@ a:hover {
 }
 
 .stat-value {
-    font-size: 20px;
+    font-size: 18px; /* 🔽 opcjonalnie też zmniejsz rozmiar czcionki */
     font-weight: bold;
     color: var(--accent-color);
+    margin-bottom: 2px; /* 🔽 było domyślnie więcej */
 }
 
 .stat-label {
-    font-size: 14px;
+    font-size: 13px; /* 🔽 mniejsze litery */
     color: var(--text-color-secondary);
+    margin-top: 0; /* 🔽 zbicie przerwy w dół */
 }
 
 /* Dodatkowe style dla statystyk i genealogii */
@@ -647,15 +649,11 @@ a:hover {
     display: flex;
     justify-content: center;
     align-items: center;
-    width: 100%;
-    max-width: 100%;
     height: 80vh;
-    min-height: 80vh;
-    max-height: 80vh;
+    overflow: hidden;
     margin: 0 auto;
     padding: 0;
-    overflow: auto;
-    position: relative;
+    background-color: transparent;
 }
 
 /* Resetujemy ogólne style dla obrazu stimulus-image */
@@ -1062,7 +1060,7 @@ a:hover {
 }
 
 .genealogy-session-row {
-    background-color: var(--bg-secondary);
+    background-color: #333333; /* Ten sam co genealogy-session-header */
     border-radius: 8px;
     padding: 0.5rem;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
@@ -1071,9 +1069,9 @@ a:hover {
 .genealogy-session-header {
     display: flex;
     flex-direction: column;
-    padding: 2px 6px;
-    background-color: #f0f0f0;
-    border-bottom: 1px solid #ddd;
+    padding: 1px 6px;
+    background-color: #333333;
+    border-bottom: 1px solid #444;
 }
 
 .session-info, .session-stats {
@@ -1081,32 +1079,39 @@ a:hover {
     flex-wrap: wrap;
     align-items: center;
     gap: 3px;
-    margin-bottom: 1px;
+    margin-bottom: 0;
+    line-height: 1;
 }
 
 .session-stats {
     gap: 3px 6px;
+    margin-top: 1px;
+    margin-bottom: 0;
 }
 
 .session-number {
     font-weight: bold;
     font-size: 0.85em;
+    color: #ffffff;
 }
 
 .session-date, .session-id, .session-rounds {
     font-size: 0.75em;
-    color: #666;
+    color: #cccccc;
 }
 
 .session-successes, .session-failures, .session-success-rate, .session-profit {
     font-size: 0.75em;
     margin-right: 6px;
+    color: #cccccc;
 }
 
 .small-button {
     padding: 1px 4px;
     font-size: 0.7em;
     margin-left: auto;
+    background-color: #444;
+    color: #fff;
 }
 
 .genealogy-pools-container {
@@ -1156,10 +1161,14 @@ a:hover {
     cursor: pointer;
     position: relative;
     overflow: hidden;
+    opacity: 0.4;
+    transition: opacity 0.3s ease;
+    border: none !important;
+    opacity: 0.4;
 }
 
 .stimulus-card.has-successes {
-    border: 1px solid rgba(0, 255, 0, 0.3);
+    opacity: 1;
 }
 
 .stimulus-card:hover {
@@ -1277,19 +1286,19 @@ a:hover {
 
 /* Klasy pochodzenia bodźców */
 .origin-random {
-    border-top: 3px solid #888;
+    /* border-top: 3px solid #888; */
 }
 
 .origin-bought {
-    border-top: 3px solid var(--success-color);
+    /* border-top: 3px solid var(--success-color); */
 }
 
 .origin-child {
-    border-top: 3px solid var(--accent-color);
+    /* border-top: 3px solid var(--accent-color); */
 }
 
 .origin-unknown {
-    border-top: 3px solid #ccc;
+    /* border-top: 3px solid #ccc; */
 }
 
 /* Klasy dla podświetlania */
@@ -1303,38 +1312,38 @@ a:hover {
 /* Style dla przodków */
 .stimulus-card.ancestor-random {
     border-color: blue;
-    box-shadow: 0 0 0 2px rgba(0, 0, 255, 0.3);
+    box-shadow: 0 0 0 2px rgb(0, 110, 255);
     z-index: 5;
 }
 
 .stimulus-card.ancestor-bought {
     border-color: gold;
-    box-shadow: 0 0 0 2px rgba(255, 215, 0, 0.3);
+    box-shadow: 0 0 0 2px rgb(255, 217, 0);
     z-index: 5;
 }
 
 .stimulus-card.ancestor-child {
     border-color: violet;
-    box-shadow: 0 0 0 2px rgba(238, 130, 238, 0.3);
+    box-shadow: 0 0 0 2px rgb(238, 130, 238);
     z-index: 5;
 }
 
 /* Style dla potomków */
 .stimulus-card.descendant-random {
     border-color: blue;
-    box-shadow: 0 0 0 2px rgba(0, 0, 255, 0.3);
+    box-shadow: 0 0 0 2px rgb(0, 0, 255);
     z-index: 5;
 }
 
 .stimulus-card.descendant-bought {
     border-color: gold;
-    box-shadow: 0 0 0 2px rgba(255, 215, 0, 0.3);
+    box-shadow: 0 0 0 2px rgb(255, 217, 0);
     z-index: 5;
 }
 
 .stimulus-card.descendant-child {
     border-color: violet;
-    box-shadow: 0 0 0 2px rgba(238, 130, 238, 0.3);
+    box-shadow: 0 0 0 2px rgb(238, 130, 238);
     z-index: 5;
 }
 
@@ -1355,12 +1364,12 @@ a:hover {
     }
     
     .positive-section {
-        border-top: 3px solid var(--success-color);
+        /* border-top: 3px solid var(--success-color); */
         padding-top: 0.5rem;
     }
     
     .negative-section {
-        border-top: 3px solid var(--error-color);
+        /* border-top: 3px solid var(--error-color); */
         padding-top: 0.5rem;
     }
     
@@ -1401,3 +1410,10 @@ a:hover {
         width: 100%;
     }
 }
+
+/* Styl tylko dla bodźców w summary */
+.summary-section .stimulus-card {
+    opacity: 1 !important;
+    border: none !important;
+    box-shadow: 0 0 4px rgba(255, 255, 255, 0.05);
+  }

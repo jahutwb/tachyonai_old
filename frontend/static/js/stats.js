@@ -973,11 +973,11 @@ function highlightAncestors(cardElement) {
                 if (parentIds.includes(cardId)) {
                     // Dla bodźców bought szukamy oryginału (tego samego ID ale innego origin)
                     if (origin === 'bought') {
-                        if (cardId === clickedId && cardOrigin !== 'bought') {
+                        if (cardId === clickedId) {
                             card.classList.add('ancestor-' + getOriginClass(cardOrigin).replace('origin-', ''));
-                            
-                            // Rekurencyjnie podświetl przodków tego rodzica, jeśli on też był dzieckiem
-                            if (cardOrigin && cardOrigin.startsWith('child_of_')) {
+                        
+                            // Kontynuuj rekurencję, jeśli origin to 'bought' lub 'child_of_...'
+                            if (cardOrigin === 'bought' || cardOrigin.startsWith('child_of_')) {
                                 highlightAncestors(card);
                             }
                         }
