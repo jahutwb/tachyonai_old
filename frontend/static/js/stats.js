@@ -3,7 +3,7 @@ const StatsState = {
     sessions: [],
     totalWealthChart: null,
     timeSuccessChart: null,
-    genealogyType: 'positive' // positive | negative
+    genealogyType: 'POSITIVE' // POSITIVE | NEGATIVE
 };
 
 // Pomocnicze funkcje
@@ -47,7 +47,7 @@ async function initStats() {
         await loadGlobalStimuliRanking();
 
         // Pobierz dane genealogii
-        await loadGenealogyData('positive');
+        await loadGenealogyData('POSITIVE');
 
         // Generuj wykres bogactwa
         generateTotalWealthChart();
@@ -696,7 +696,7 @@ function updateGenealogyView(genealogyData, type) {
     const headerRow = document.createElement('div');
     headerRow.className = 'genealogy-header';
     headerRow.innerHTML = `
-        <div class="genealogy-title">Genealogia bodźców ${type === 'positive' ? 'pozytywnych' : 'negatywnych'}</div>
+        <div class="genealogy-title">Genealogia bodźców ${type === 'POSITIVE' ? 'pozytywnych' : 'negatywnych'}</div>
         <div class="genealogy-info">
             <p>Kliknij bodziec, aby zobaczyć jego przodków i potomków</p>
             <p><span class="color-guide random">■</span> random <span class="color-guide bought">■</span> bought <span class="color-guide child">■</span> child</p>
@@ -771,16 +771,16 @@ function updateGenealogyView(genealogyData, type) {
         poolsContainer.className = 'genealogy-pools-container';
 
         // Dodaj pule bodźców (pozytywne i negatywne)
-        const typesToShow = type === 'all' ? ['positive', 'negative'] : [type];
+        const typesToShow = type === 'all' ? ['POSITIVE', 'NEGATIVE'] : [type];
 
         typesToShow.forEach(poolType => {
             // Stwórz kontener dla puli
             const poolContainer = document.createElement('div');
-            poolContainer.className = `genealogy-pool ${poolType}-pool`;
+            poolContainer.className = `genealogy-pool ${poolType.toLowerCase()}-pool`;
 
             // Dodaj kontener puli do kontenera pul w sekcji
             const poolSection = document.createElement('div');
-            poolSection.className = `pool-section ${poolType}-section`;
+            poolSection.className = `pool-section ${poolType.toLowerCase()}-section`;
             poolSection.appendChild(poolContainer);
             poolsContainer.appendChild(poolSection);
 
@@ -1056,13 +1056,13 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('show-positive-genealogy').addEventListener('click', () => {
         document.getElementById('show-positive-genealogy').classList.add('active');
         document.getElementById('show-negative-genealogy').classList.remove('active');
-        loadGenealogyData('positive');
+        loadGenealogyData('POSITIVE');
     });
 
     document.getElementById('show-negative-genealogy').addEventListener('click', () => {
         document.getElementById('show-positive-genealogy').classList.remove('active');
         document.getElementById('show-negative-genealogy').classList.add('active');
-        loadGenealogyData('negative');
+        loadGenealogyData('NEGATIVE');
     });
 
     // Zamykanie modala
