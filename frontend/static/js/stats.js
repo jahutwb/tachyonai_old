@@ -239,12 +239,19 @@ async function openSessionDetails(sessionId) {
 
                 // First try to use user_choice_side if available
                 if (round.user_choice_side) {
-                    // Convert to uppercase string and compare
-                    const sideUpper = String(round.user_choice_side).toUpperCase();
-                    choiceText = sideUpper === 'LEFT' ? 'Lewa' : 'Prawa';
+                    // Convert to string and check for various formats
+                    const sideStr = String(round.user_choice_side);
+                    console.log(`Processing side string: '${sideStr}'`);
+
+                    // Check for enum format like 'SideEnum.LEFT' or just 'LEFT'
+                    if (sideStr.includes('LEFT') || sideStr === 'LEFT' || sideStr === 'left') {
+                        choiceText = 'Lewa';
+                    } else if (sideStr.includes('RIGHT') || sideStr === 'RIGHT' || sideStr === 'right') {
+                        choiceText = 'Prawa';
+                    }
                 }
-                // If user_choice_side is not available, try to infer from user_action and left_action/right_action
-                else if (round.user_action && (round.left_action || round.right_action)) {
+                // If user_choice_side is not available or not recognized, try to infer from user_action and left_action/right_action
+                if (choiceText === 'Nieznany' && round.user_action && (round.left_action || round.right_action)) {
                     // If user_action matches left_action, then the user chose LEFT
                     if (round.user_action === round.left_action) {
                         choiceText = 'Lewa';
