@@ -309,7 +309,7 @@ class RoundBase(BaseModel):
     round_number: int
     pos_image_id: int
     neg_image_id: int
-    user_choice_side: Optional[SideEnum] = None
+    user_choice_side: Optional[str] = None
 
 
 class RoundCreate(BaseModel):
