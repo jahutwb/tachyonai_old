@@ -360,12 +360,15 @@ async def submit_round_choice(
         logger.info(f"[TIMING] Image update: {time.time() - images_start:.3f}s")
 
         # Update round object
+        round_obj.user_choice_side = str(choice.side)  # Set the user's choice side
         round_obj.user_action = user_action
         round_obj.end_price = end_price
         round_obj.profit_fraction = profit_fraction
         round_obj.result = result
         round_obj.stimulus_id = stimulus_id
         round_obj.processed_at = func.now()
+
+        logger.info(f"Updated round {round_obj.id} with user_choice_side={round_obj.user_choice_side}")
 
         db.commit()
         logger.info(f"[TIMING] Total choice processing time: {time.time() - start_time:.3f}s")
