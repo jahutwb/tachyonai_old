@@ -234,12 +234,25 @@ async function openSessionDetails(sessionId) {
                 // Debug user_choice_side value
                 console.log(`Round ${index + 1} choice:`, round.user_choice_side, typeof round.user_choice_side);
 
-                // Determine the choice text based on user_choice_side
+                // Determine the choice text based on user_choice_side or user_action
                 let choiceText = 'Nieznany';
+
+                // First try to use user_choice_side if available
                 if (round.user_choice_side) {
                     // Convert to uppercase string and compare
                     const sideUpper = String(round.user_choice_side).toUpperCase();
                     choiceText = sideUpper === 'LEFT' ? 'Lewa' : 'Prawa';
+                }
+                // If user_choice_side is not available, try to infer from user_action and left_action/right_action
+                else if (round.user_action && (round.left_action || round.right_action)) {
+                    // If user_action matches left_action, then the user chose LEFT
+                    if (round.user_action === round.left_action) {
+                        choiceText = 'Lewa';
+                    }
+                    // If user_action matches right_action, then the user chose RIGHT
+                    else if (round.user_action === round.right_action) {
+                        choiceText = 'Prawa';
+                    }
                 }
 
                 row.innerHTML = `
