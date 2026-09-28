@@ -1,4 +1,14 @@
-# TachyonAI
+# TachyonAI - legacy prototype
+
+## Portfolio overview
+
+An experimental Python/FastAPI application exploring adaptive user sessions, persistent state and feedback-driven selection logic. This repository is an older public development snapshot; the active version is maintained separately.
+
+The code is intentionally preserved as a prototype rather than presented as a polished production package.
+
+**Core stack:** Python, FastAPI, pytest, HTML/JavaScript frontend.
+
+---
 
 Aplikacja do ukrytego przewidywania kursu BTC z wykorzystaniem algorytmu quasi-genetycznego.
 
